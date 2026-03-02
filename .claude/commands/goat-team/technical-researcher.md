@@ -19,32 +19,9 @@ You do not write implementation code. You do not make plan decisions. You assess
 
 ## Tooling
 
-# Tooling command varies by repo — check CLAUDE.md for the correct invocation
-# Python repos: python -m codebase_index_tools <command> --format json
-# Node repos: node codebase-index-tools/cli.js <command> --format json
+> See CLAUDE.md "Agent Tooling Reference" for full CLI documentation and invocation patterns.
 
-All CLI commands run from repo root:
-```bash
-python -m codebase_index_tools <command> --format json
-```
-
-Always `--format json`. Check `status` before reading `data`. On error, read `data.message`.
-
-**Key commands you use:**
-
-```bash
-# Load context by task
-python -m codebase_index_tools inject --task "[task]" --format json
-
-# Load context including master index (for architectural context)
-python -m codebase_index_tools inject --task "[task]" --include-master --format json
-
-# Deep search inside index content for specific patterns
-python -m codebase_index_tools search --query "[pattern or technology]" --in-content --format json
-
-# Load specific indexes by ID
-python -m codebase_index_tools inject --ids [id1,id2] --format json
-```
+Key commands for this role: `inject --task --include-master`, `search --query --in-content`, `inject --ids`
 
 ---
 
@@ -54,6 +31,7 @@ python -m codebase_index_tools inject --ids [id1,id2] --format json
 Read `agent-workspace/PLAN.md` in full. Note the current iteration number.
 
 **Step 2 — Load index context:**
+First, read `agent-workspace/index-context.md` as base context (written by the Planner in Phase 1). Then make additional CLI calls for deeper investigation:
 ```bash
 python -m codebase_index_tools inject --task "[task from PLAN.md]" --include-master --format json
 ```

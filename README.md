@@ -22,21 +22,21 @@ GOAT-CEO takes a different path: rather than coordinating a single repo, it leve
 
 ## How It Works
 
-Your Claude Code session becomes the CEO — the sole orchestration authority for the session. The CEO spawns one Overseer per repository, and each Overseer independently manages a full 7-phase GOAT pipeline for its repo. The CEO routes cross-repo information where needed, pauses dependent work when one repo is ahead of another, and spawns CEO-Assistants on demand for context scouting. A dedicated Scribe agent handles all session logging, keeping the CEO's output clean.
+Your Claude Code session becomes the CEO — the sole orchestration authority for the session. The CEO spawns one Overseer per repository, and each Overseer independently manages a full 6-phase GOAT pipeline for its repo. The CEO routes cross-repo information where needed, pauses dependent work when one repo is ahead of another, and spawns CEO-Assistants on demand for context scouting. A dedicated Scribe agent handles all session logging, keeping the CEO's output clean.
 
 ```
 Your Claude Code session (CEO)
 │
 ├── Spawns: ceo-scribe (session logger, runs for entire session)
 │
-├── Spawns: api-overseer  →  manages 7-phase GOAT pipeline for api-repo
+├── Spawns: api-overseer  →  manages 6-phase GOAT pipeline for api-repo
 │   ├── api-planner
 │   ├── api-researcher-codebase, api-researcher-technical  (parallel)
 │   ├── api-implementer-1, api-implementer-2              (parallel when safe)
 │   ├── api-index-updater
 │   └── api-reviewer-a, api-reviewer-b                    (independent)
 │
-├── Spawns: web-overseer  →  manages 7-phase GOAT pipeline for web-repo
+├── Spawns: web-overseer  →  manages 6-phase GOAT pipeline for web-repo
 │   └── (same structure, isolated team)
 │
 ├── Spawns: ceo-assistant-api  →  context scout (on demand, per event)
@@ -82,19 +82,17 @@ More importantly, the GOAT pipeline treats index accuracy as a first-class conce
 
 ## The GOAT Pipeline
 
-Each Overseer runs a 7-phase pipeline for its assigned repository:
+Each Overseer runs a 6-phase pipeline for its assigned repository:
 
 | Phase | Name | Description |
 |-------|------|-------------|
 | 0 | Assessment | Overseer reads the task, orients independently, and determines whether code changes are actually required. Non-implementation tasks (investigation, verification, diagnosis) are resolved here directly — the pipeline does not activate. |
-| 1 | Planning | Architect agent loads index context, analyzes the task, and creates `PLAN.md`. |
-| 2 | Research | Codebase and technical researchers investigate in parallel — validating the plan against actual code and assessing approach quality. |
-| 3 | Plan Revision | Architect reviews research findings, revises the plan, and iterates until research produces a clean pass. |
-| 4 | Manifest | Architect creates `IMPLEMENTATION-MANIFEST.md`: batched, ordered implementation tasks. |
-| 5 | Implementation | Implementers execute batches (parallel when no file conflicts exist). |
-| 5.5 | Index Update | Dedicated agent ensures all affected `INDEX.md` files reflect the new code. |
-| 6 | Review | Two independent reviewers verify implementation correctness and index coverage. |
-| 7 | Finalize | Overseer evaluates reviewer verdicts, handles failures, and summarizes the work. |
+| 1 | Planning | Architect agent loads index context, analyzes the task, creates `PLAN.md` and writes shared `index-context.md`. |
+| 2 | Research & Revision Loop | Codebase and technical researchers investigate in parallel, architect revises the plan, loop iterates until clean pass. On exit, architect generates `IMPLEMENTATION-MANIFEST.md` inline. |
+| 3 | Implementation | Implementers execute batches (parallel when no file conflicts exist). |
+| 4 | Index Update | Dedicated agent ensures all affected `INDEX.md` files reflect the new code, plus progressive enrichment of neighboring unindexed areas. |
+| 5 | Review | Two independent reviewers verify implementation correctness and Index Updater completeness. |
+| 6 | Finalize | Overseer evaluates reviewer verdicts, handles failures, and summarizes the work. |
 
 Pipeline artifacts (`PLAN.md`, `RESEARCH-LOG.md`, `IMPLEMENTATION-MANIFEST.md`, `REVIEW-LOG.md`) are written to `agent-workspace/` in each repo and serve as checkpoints for Overseer recovery if a long-running session is interrupted.
 
@@ -109,7 +107,7 @@ GOAT-CEO/
 ├── .claude/
 │   ├── agents/                        ← Custom agent type definitions
 │   │   ├── team-architect.md          ← Planner/architect (Opus)
-│   │   ├── team-ceo-assistant.md      ← CEO context scout (Opus)
+│   │   ├── team-ceo-assistant.md      ← Cross-repo impact assessment (Opus)
 │   │   ├── team-ceo-scribe.md         ← Session logger (Haiku)
 │   │   ├── team-cross-reviewer.md     ← Cross-repo contract verifier (Sonnet)
 │   │   ├── team-implementer.md        ← Implementers (Sonnet)

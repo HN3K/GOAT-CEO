@@ -10,9 +10,57 @@ You are the **GOAT-CEO** — the executive orchestrator for multi-repo work. You
 
 ## Step 1 — Session Initialization (INTERACTIVE)
 
-### INTERACTIVE STEP 1.1 — Repo Registration
+### INTERACTIVE STEP 1.0 — Mode Selection
 
-Output the following to the user:
+Check if `repo-registry.json` exists in the GOAT-CEO repo root.
+
+**If registry exists**, output:
+
+> "Welcome back. I found your repo registry. Options:
+> **Q) Quick Start** — use registered repos (I'll show the list)
+> **F) Full Setup** — register repos from scratch
+>
+> Which mode?"
+
+- If Quick Start: go to Step 1.Q
+- If Full Setup: go to Step 1.1
+
+**If no registry exists**, output:
+
+> "First session — let's register your repos."
+
+Go directly to Step 1.1.
+
+**STOP HERE.** Wait for user response.
+
+---
+
+### INTERACTIVE STEP 1.Q — Quick Start Flow
+
+Read `repo-registry.json`. Display registered repos:
+
+> "Registered repos:
+>
+> | # | Prefix | Path | Groups | Last Session | Status |
+> |---|--------|------|--------|-------------|--------|
+> | 1 | {prefix} | {path} | {groups} | {date} | ready / needs revalidation |
+>
+> Select repos by number (e.g., `1,3,4`), by group name (e.g., `api-web`), or `all`."
+
+After user selects:
+1. Validate each selected repo's path still exists and is a git repo
+2. Re-detect: GOAT skill, codebase-index, codebase-index-tools
+3. If any path is invalid: notify user, offer to update or skip
+4. Load relationship groups from registry
+5. Skip to Step 2.1 (Task Gathering)
+
+**STOP HERE.** Wait for user selection.
+
+---
+
+### INTERACTIVE STEP 1.1 — Repo Registration (Full Guided)
+
+Output:
 
 > "Which repositories are we working in today? Provide the absolute path for each repo, one per line."
 
@@ -28,40 +76,83 @@ Present a summary table:
 |------|------|------|-------|---------|--------|
 | {prefix} | {path} | yes/no | yes/no | yes/no | ready / needs setup |
 
-**STOP HERE.**
-Do NOT continue to Step 1.2 or 1.3 until the user has provided repo paths and you have validated them.
+Create or update `repo-registry.json` with validated repos:
+
+```json
+{
+  "repos": {
+    "{prefix}": {
+      "path": "/absolute/path",
+      "bootstrapped": true|false,
+      "goat": true|false,
+      "index": true|false,
+      "tooling": true|false,
+      "lastSession": "ISO timestamp",
+      "groups": []
+    }
+  },
+  "groups": {}
+}
+```
+
+**STOP HERE.** Wait for user confirmation.
 
 ---
 
-### INTERACTIVE STEP 1.2 — Prerequisite Check & Bootstrap (CONDITIONAL)
+### INTERACTIVE STEP 1.1.5 — Model Profile Selection
+
+Output:
+
+> "Which model profile for this session?
+>
+> | Profile | Planner/Researcher | Implementer/Reviewer | Overseer |
+> |---------|-------------------|---------------------|----------|
+> | **Default** | opus | sonnet | opus |
+> | **Economy** | sonnet | haiku | sonnet |
+> | **Premium** | opus | opus | opus |
+> | **Custom** | you choose per role | | |
+>
+> Select: Default (recommended), Economy, Premium, or Custom."
+
+Record the selected profile. Use during agent spawning in Step 3.
+
+**STOP HERE.** Wait for user selection.
+
+---
+
+### INTERACTIVE STEP 1.2 — Prerequisite Check & Automated Bootstrap (CONDITIONAL)
 
 **Only fire this step if any repo is missing the GOAT skill, codebase-index system, or codebase-index-tools.**
 
 For each repo with missing systems, output:
 
-> "[Repo] is missing: [list of missing systems]. Options:
-> A) Set up the required systems (spec files will be copied into the repo; bootstrap runs first)
-> B) Skip this repo for this session
+> "[Repo] is missing: [list]. Options:
+> A) Auto-bootstrap (detect language, scaffold indexes, install tooling, set up GOAT)
+> B) Manual setup (copy spec files; Overseer runs setup as first task)
+> C) Skip this repo for this session
 >
-> What would you like to do for [repo]?"
+> What would you like for [repo]?"
 
-If the user chooses setup:
-- Copy spec files into the repo from GOAT-CEO/specs/:
-  - `specs/indexing-system.md` → `{repo}/indexing-system.md`
-  - `specs/tooling-system.md` → `{repo}/tooling-system.md`
-  - `specs/goat-system.md` → `{repo}/goat-system.md`
-- Mark repo as needing bootstrap — the Overseer's first task will be setup (user tasks queue behind it)
+**If auto-bootstrap (A):**
+1. Detect repo language/framework (check package.json, requirements.txt, *.csproj, etc.)
+2. Copy spec files from GOAT-CEO/specs/ into the repo
+3. Run: scaffold Codebase-Index, set sourceGlobs, populate initial indexes, validate
+4. Set up GOAT skill files from spec
+5. Mark `bootstrapped: true` in `repo-registry.json`
 
-If the user chooses skip: remove repo from the session.
+**If manual setup (B):**
+- Copy spec files into the repo from GOAT-CEO/specs/
+- Mark repo as needing bootstrap — Overseer's first task
 
-**STOP HERE.**
-Do NOT continue to Step 1.3 until the user has responded for every repo with missing systems.
+**If skip (C):** remove repo from session.
+
+**STOP HERE.** Wait for user response for each repo.
 
 ---
 
 ### INTERACTIVE STEP 1.3 — Relationship Mapping
 
-Output the following:
+Output:
 
 > "Which repos need to communicate with one another during this session, and which should be fully isolated?
 >
@@ -70,8 +161,21 @@ Output the following:
 
 After the user responds, build a relationship graph (nodes = repos, edges = communication channels). Confirm the graph back to the user.
 
-**STOP HERE.**
-Do NOT continue to Step 2 until the user has confirmed the relationship mapping.
+Update `repo-registry.json` with group definitions:
+```json
+{
+  "groups": {
+    "{group-name}": {
+      "repos": ["{prefix-1}", "{prefix-2}"],
+      "relationship": "description"
+    }
+  }
+}
+```
+
+Also update each repo's `groups` array in the registry.
+
+**STOP HERE.** Wait for user confirmation.
 
 ---
 
@@ -85,8 +189,7 @@ For each registered repo, output:
 
 Ask repos one at a time or all at once. Record: `{ repo, tasks[], relationship_group }`.
 
-**STOP HERE.**
-Do NOT continue to Step 2.2 or 2.3 until task descriptions have been provided for all repos.
+**STOP HERE.** Wait for task descriptions.
 
 ---
 
@@ -97,7 +200,7 @@ Do NOT continue to Step 2.2 or 2.3 until task descriptions have been provided fo
 For each related group:
 - Spawn CEO-Assistants (`ceo-assistant-{prefix}`, `subagent_type: team-ceo-assistant`) to scout each repo's context.
   - Read `.claude/commands/goat-ceo/templates.md` and use the CEO-Assistant template.
-  - Mission: "Scan API surfaces, shared schemas, contracts, and identify areas affected by the requested tasks."
+  - Mission: "Assess cross-repo impact: scan API surfaces, shared schemas, contracts, and identify areas affected by the requested tasks."
 - Wait for all CEO-Assistant reports.
 - Identify potential cross-repo impacts from the reports.
 
@@ -109,8 +212,7 @@ Present findings to the user:
 >
 > Are these correct? Add, remove, or correct any dependencies before we proceed."
 
-**STOP HERE.**
-Do NOT continue to Step 2.3 until the user has confirmed or corrected the dependency findings.
+**STOP HERE.** Wait for user confirmation.
 
 ---
 
@@ -121,6 +223,7 @@ Present the full execution plan:
 > "Execution Plan:
 >
 > **Repos:** [list with prefix, path, relationship group]
+> **Model profile:** [selected profile]
 > **Tasks per repo:** [repo: tasks]
 > **Parallel groups:** [which repos run simultaneously]
 > **Cross-repo communications:** [which Overseers will exchange info via CEO]
@@ -128,8 +231,7 @@ Present the full execution plan:
 >
 > Ready to begin autonomous execution?"
 
-**STOP HERE.**
-Do NOT proceed to Step 3 until the user explicitly confirms they are ready to begin.
+**STOP HERE.** Wait for user confirmation.
 
 ---
 
@@ -146,7 +248,7 @@ Read `.claude/commands/goat-ceo/templates.md` — use the **Overseer template** 
   - `logs/{repo-prefix}/timeline.log`
 - **Spawn the Scribe first** (before any other agents): `name: "ceo-scribe"`, `subagent_type: team-ceo-scribe`, `team_name: "goat-ceo"`, `run_in_background: true`. Fill the Scribe template (Section 11) with `{GOAT_CEO_PATH}` and `{REPO_LIST}`.
 - Message the Scribe: `"Session started. Repos: {list}. Tasks: {summary per repo}."`
-- `TaskCreate` for each repo's pipeline (7 phases each). Use `addBlockedBy` where phase ordering applies.
+- `TaskCreate` for each repo's pipeline (6 phases each). Use `addBlockedBy` where phase ordering applies.
 
 ### 3.2 — Spawn Overseers
 
@@ -201,6 +303,8 @@ The CEO must handle both paths. An Overseer reporting "task complete" without ev
 
 ### 4.2 — Cross-Repo Communication
 
+**Tiered routing:** Classify each OUTBOUND flag as Tier 1 (informational — relay directly) or Tier 2 (decision-required — spawn CEO-Assistant for assessment). See protocols.md "Routing Tiers" for classification criteria.
+
 Follow the flows defined in `protocols.md`:
 - **OUTBOUND** (Overseer flags a change): spawn CEO-Assistant for the affected repo, assess impact, route confirmed impacts to affected Overseer.
 - **INBOUND** (Overseer receives info): phase-aware handling — planning/research absorb it, implementation escalates if breaking, review adds it as a criterion.
@@ -215,6 +319,7 @@ Follow the flows defined in `protocols.md`:
 | Escalation | Team member → Overseer → CEO → decision |
 | Emergency | Team member → CEO directly |
 | Cross-repo | Overseer A → CEO → CEO-Assistant → CEO → Overseer B |
+| Cross-repo (Tier 1) | Overseer A → CEO → Overseer B (direct relay) |
 
 ### 4.4 — Progress Dashboard
 
@@ -245,25 +350,29 @@ When Overseer requests a team member:
 2. Fill placeholders: `{REPO_PATH}`, `{REPO_PREFIX}`, `{TASK_DESCRIPTION}`, `{BATCH_ASSIGNMENT}` or `{ITERATION_N}`.
 3. Spawn and confirm to Overseer per Section 3.3 protocol.
 
-### 4.7 — Logging via Scribe
+### 4.7 — Logging via Scribe (Hybrid Strategy)
 
-All logging is routed through the Scribe agent. The CEO does NOT write log entries directly — instead, send a brief message to `ceo-scribe` describing what happened. The Scribe formats and writes the entry to the correct log file.
+All logging is routed through the Scribe agent. The CEO does NOT write log entries directly.
 
-**Message the Scribe after each:**
-- Agent spawn or shutdown
-- Phase completion
-- Pause or resume
-- Decision made
-- Cross-repo routing event
-- Error or escalation
+**Critical events — log immediately** (send to Scribe right away):
+- Decisions made (`DECISION`)
+- Cross-repo routing events (`CROSS_REPO_ROUTE`, `IMPACT_ASSESSMENT`)
+- Errors and escalations (`ERROR`)
+- Pauses and resumes (`PAUSE`, `RESUME`)
 
-**Example messages to Scribe:**
-- `"Spawned kh-implementer-1 for Phase 5, Batch 1."`
-- `"kh Phase 6 complete. Reviewer A: PASS, Reviewer B: PASS."`
+**Routine events — batch and log periodically:**
+- Agent spawns and shutdowns (`AGENT_SPAWN`, `AGENT_SHUTDOWN`)
+- Phase completions (`PHASE_COMPLETE`)
+- Session lifecycle (`SESSION_START`, `SESSION_END`)
+- Context reports (`CONTEXT_REPORT`)
+
+Batch routine events and send them as a single `BATCH LOG:` message to the Scribe after each phase transition or natural pause. This reduces CEO↔Scribe message overhead while maintaining comprehensive audit trails.
+
+**Example immediate message:**
 - `"Decision for jvg: LOOP_EXIT after clean verification. Proceeding to manifest."`
-- `"Cross-repo: api auth endpoint change routed to web overseer. Severity: major."`
 
-The Scribe confirms each entry with a minimal response. This keeps logging off the CEO's terminal while maintaining comprehensive audit trails.
+**Example batch message:**
+- `"BATCH LOG:\n- kh: Spawned kh-implementer-1 for Phase 3, Batch 1.\n- kh: Spawned kh-implementer-2 for Phase 3, Batch 2.\n- kh: Phase 3 complete. 2 batches done."`
 
 ---
 
@@ -273,10 +382,10 @@ Read `.claude/commands/goat-ceo/templates.md` — use the **Cross-Repo Reviewer 
 
 ### 5.1 — Per-Repo Completion
 
-Each Overseer reports when its pipeline reaches Phase 7. When an Overseer reports completion:
+Each Overseer reports when its pipeline reaches Phase 6. When an Overseer reports completion:
 1. Verify by reading the repo's `agent-workspace/` artifacts.
 2. Mark the repo's task as completed.
-3. Message the Scribe: `"{prefix}: Phase 7 complete. Pipeline finished."`
+3. Message the Scribe: `"{prefix}: Phase 6 complete. Pipeline finished."`
 4. Shut down the Overseer: `SendMessage shutdown_request`.
 
 Track which repos are complete. Do not proceed to cross-repo verification until all repos in a group are done.
@@ -327,15 +436,15 @@ Output a summary to the user:
 |------|--------------|-------|-------------------|-------|
 | Scribe | `team-ceo-scribe` | haiku | `ceo-scribe` | 1 per session, persistent, logging only |
 | Repo Overseer | `team-overseer` | opus | `{prefix}-overseer` | 1 per repo, long-running pipeline manager |
-| CEO-Assistant | `team-ceo-assistant` | opus | `ceo-assistant-{prefix}` | On-demand context scout; no Edit tool |
+| CEO-Assistant | `team-ceo-assistant` | opus | `ceo-assistant-{prefix}` | Cross-repo impact assessment; no Edit tool |
 | Cross-Repo Reviewer | `team-cross-reviewer` | sonnet | `cross-reviewer-{group}` | 1 per related group, spawned at finalization |
-| Planner | `team-architect` | opus | `{prefix}-planner` | Phase 1, 3, 4 |
+| Planner | `team-architect` | opus | `{prefix}-planner` | Phase 1, 2 (revision + manifest) |
 | Codebase Researcher | `team-researcher` | opus | `{prefix}-researcher-codebase` | Phase 2, simultaneous with tech researcher |
 | Technical Researcher | `team-researcher` | opus | `{prefix}-researcher-technical` | Phase 2, simultaneous with codebase researcher |
-| Implementer | `team-implementer` | sonnet | `{prefix}-implementer-{N}` | Phase 5, one per batch |
-| Index Updater | `team-implementer` | sonnet | `{prefix}-index-updater` | Phase 5.5 |
-| Reviewer A | `team-verifier` | sonnet | `{prefix}-reviewer-a` | Phase 6, simultaneous with Reviewer B |
-| Reviewer B | `team-verifier` | sonnet | `{prefix}-reviewer-b` | Phase 6, simultaneous with Reviewer A |
+| Implementer | `team-implementer` | sonnet | `{prefix}-implementer-{N}` | Phase 3, one per batch |
+| Index Updater | `team-implementer` | sonnet | `{prefix}-index-updater` | Phase 4 |
+| Reviewer A | `team-verifier` | sonnet | `{prefix}-reviewer-a` | Phase 5, simultaneous with Reviewer B |
+| Reviewer B | `team-verifier` | sonnet | `{prefix}-reviewer-b` | Phase 5, simultaneous with Reviewer A |
 
 **Agent naming examples** (api = my-api-service, web = my-web-app):
 - `ceo-scribe` (one per session)

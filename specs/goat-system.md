@@ -6,7 +6,7 @@
 
 ## What This Is
 
-GOAT is a structured multi-agent implementation pipeline for Claude Code. It spawns specialized agents (planner, researchers, implementers, reviewers) through a 7-phase workflow with built-in quality gates and codebase index integration.
+GOAT is a structured multi-agent implementation pipeline for Claude Code. It spawns specialized agents (planner, researchers, implementers, reviewers) through a 6-phase workflow with built-in quality gates and codebase index integration.
 
 ---
 
@@ -58,52 +58,47 @@ These define custom agent types with tool restrictions and model assignments:
 ### Phase 1: Planning
 - Planner loads index context via codebase-index-tools
 - Creates `agent-workspace/PLAN.md`, `ISSUE-TRACKER.md`, `RESEARCH-LOG.md`
+- Writes shared index artifact to `agent-workspace/index-context.md`
 - Signals `PLANNER_SIGNAL: RESEARCH_START`
 
-### Phase 2: Research Loop
+### Phase 2: Research & Revision Loop
 - Two researchers spawned simultaneously:
   - **Codebase researcher**: validates plan against actual code, finds upstream/downstream risks
   - **Technical researcher**: assesses approach quality, checks best practices, uses web search
+- Both load `agent-workspace/index-context.md` as base context before CLI calls
 - Both write findings to `RESEARCH-LOG.md`
-
-### Phase 3: Plan Revision
-- Planner reviews all researcher findings
-- Revises plan as needed
-- Evaluates exit criteria: `LOOP_CONTINUE` or `LOOP_EXIT`
-- If `LOOP_CONTINUE`: back to Phase 2 with incremented iteration
+- Planner reviews findings, revises plan, evaluates exit criteria
+- If `LOOP_CONTINUE`: iterate (back to research)
+- If `LOOP_EXIT`: Planner generates `IMPLEMENTATION-MANIFEST.md` inline (no separate phase)
 - If iteration count > 3: ask user whether to continue, adjust scope, or proceed
 
-### Phase 4: Implementation Manifest
-- Planner creates `agent-workspace/IMPLEMENTATION-MANIFEST.md`
-- Contains batched implementation tasks with parallelism rules
-- Signals `PLANNER_SIGNAL: MANIFEST_READY`
-
-### Phase 5: Implementation
+### Phase 3: Implementation
 - Implementers execute manifest batches
 - Batches with no shared files run in parallel; shared files run sequentially
 - Each implementer runs a post-implementation index check
 
-### Phase 5.5: Index Update
+### Phase 4: Index Update
 - Dedicated index updater reads manifest to identify modified files
 - For each modified file, finds its covering INDEX.md
 - Compares index content against actual code
-- Updates inaccuracies
+- Updates inaccuracies (content-aware, not just timestamp-based)
+- Performs progressive enrichment: scans neighboring unindexed code and scaffolds new indexes
 - Writes update log to `REVIEW-LOG.md`
 
-### Phase 6: Review
+### Phase 5: Review
 - Two independent reviewers spawned simultaneously
 - Each reviewer:
   1. Reads plan and manifest
   2. Verifies implementation against acceptance criteria
   3. Checks for bugs, security issues, pattern violations
-  4. Performs mandatory index update check
+  4. Verifies the Index Updater's work (does NOT update indexes — verification only)
   5. Issues verdict: PASS or FAIL (with severity: Critical/Major/Minor)
 
-### Phase 7: Finalize
+### Phase 6: Finalize
 - Overseer evaluates both review verdicts
-- Hard gates: Index updates must be present, no stale/missing indexes
+- Hard gates: Index update (Phase 4) must be present and clean
 - Both PASS: summarize and clean up
-- FAIL (Major only): spawn targeted fix, re-run Phase 6 (max 2 cycles)
+- FAIL (Major only): spawn targeted fix, re-run Phase 5 (max 2 cycles)
 - FAIL (Critical): ask user for guidance
 
 ---
@@ -115,6 +110,7 @@ All written to `agent-workspace/` at the repo root:
 | File | Owner | Purpose |
 |------|-------|---------|
 | `PLAN.md` | Planner | Implementation plan with steps, risks, acceptance criteria |
+| `index-context.md` | Planner | Shared index context artifact — avoids redundant CLI calls across researchers |
 | `RESEARCH-LOG.md` | Researchers, Planner | Running log of findings, signals, and iteration markers |
 | `ISSUE-TRACKER.md` | All agents | Issues with severity tracking |
 | `IMPLEMENTATION-MANIFEST.md` | Planner | Batched tasks with file assignments and parallelism rules |
@@ -152,12 +148,13 @@ All written to `agent-workspace/` at the repo root:
 - Reads each modified file's covering INDEX.md
 - Compares descriptions against actual code behavior
 - Updates inaccurate descriptions, not just dates
+- Progressive enrichment: scans neighboring unindexed code, scaffolds new indexes, expands key files tables
 
 ### Reviewer (team-verifier)
 - Independent verification of implementation against plan
 - Checks: correctness, completeness, patterns, security, test coverage
-- Performs mandatory index update check before issuing verdict
-- Can update INDEX.md files during review
+- Verifies the Index Updater's work is complete and accurate (verification only — does not update indexes)
+- Issues PASS/FAIL verdict; FAIL if Index Updater's work is incomplete
 
 ---
 

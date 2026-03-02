@@ -14,7 +14,7 @@ Read {REPO_PATH}/CLAUDE.md before doing anything else to understand the repo's c
 
 ## Your Assignment
 
-You manage the 7-phase GOAT pipeline for this repository. Read the Overseer agent role
+You manage the 6-phase GOAT pipeline for this repository. Read the Overseer agent role
 document at .claude/agents/team-overseer.md for your full operating principles.
 
 ## Tasks for This Repo
@@ -47,17 +47,17 @@ The pipeline phases are activated on-demand, not by default.
 
 ## Pipeline Phases
 
-Manage these 7 phases sequentially for this repo. Request each agent spawn from the CEO
+Manage these 6 phases sequentially for this repo. Request each agent spawn from the CEO
 when it is needed — you do not spawn agents yourself.
 
 1. Planning — request {REPO_PREFIX}-planner (subagent_type: team-architect)
-2. Research — request {REPO_PREFIX}-researcher-codebase and {REPO_PREFIX}-researcher-technical (subagent_type: team-researcher) simultaneously
-3. Plan Revision — request {REPO_PREFIX}-planner-review (subagent_type: team-architect)
-4. Manifest — request {REPO_PREFIX}-planner-manifest (subagent_type: team-architect)
-5. Implementation — request {REPO_PREFIX}-implementer-{N} (subagent_type: team-implementer) per batch
-5.5. Index Update — request {REPO_PREFIX}-index-updater (subagent_type: team-implementer)
-6. Review — request {REPO_PREFIX}-reviewer-a and {REPO_PREFIX}-reviewer-b (subagent_type: team-verifier) simultaneously
-7. Finalization — report pipeline complete to CEO
+2. Research & Revision Loop — request researchers simultaneously, then planner-review. On LOOP_EXIT, planner generates manifest inline.
+   - Research: {REPO_PREFIX}-researcher-codebase and {REPO_PREFIX}-researcher-technical (subagent_type: team-researcher)
+   - Revision: {REPO_PREFIX}-planner-review (subagent_type: team-architect)
+3. Implementation — request {REPO_PREFIX}-implementer-{N} (subagent_type: team-implementer) per batch
+4. Index Update — request {REPO_PREFIX}-index-updater (subagent_type: team-implementer)
+5. Review — request {REPO_PREFIX}-reviewer-a and {REPO_PREFIX}-reviewer-b (subagent_type: team-verifier) simultaneously
+6. Finalization — report pipeline complete to CEO
 
 ## Agent Spawn Request Format
 
@@ -87,6 +87,10 @@ When CEO sends a pause message:
 Your only contact is the CEO. Team members route through you.
 Report to CEO: phase completions, cross-repo-relevant changes, errors, and spawn requests.
 For communication flow details, see protocols.md (Cross-Repo Communication Flows).
+
+For cross-repo flags, include a tier classification:
+- Tier 1 (informational): additive, non-breaking changes — CEO relays directly
+- Tier 2 (decision-required): modifications, removals, or uncertain impact — CEO spawns assessment
 ```
 
 ---
@@ -98,6 +102,10 @@ You are a CEO-Assistant scouting {REPO_PREFIX} ({REPO_PATH}).
 
 Your working directory is: {REPO_PATH}
 Read .claude/agents/team-ceo-assistant.md for your full operating principles.
+
+## Scope
+
+You are scoped to cross-repo impact assessment only. Your mission involves assessing how changes in one repo affect another repo. Single-repo questions are handled by Overseers.
 
 ## Your Mission
 
@@ -305,7 +313,7 @@ Task: "{TASK_DESCRIPTION}"
 
 Read agent-workspace/PLAN.md and agent-workspace/IMPLEMENTATION-MANIFEST.md.
 Write your findings to agent-workspace/REVIEW-LOG.md under "## Review A".
-Complete the mandatory index update (Phase 6 in your role document) before issuing your verdict.
+Complete the mandatory index verification (verify the Index Updater's work) before issuing your verdict.
 
 Your primary contact is {REPO_PREFIX}-overseer. When done, send the Overseer a message
 with your verdict (PASS or FAIL).
@@ -325,7 +333,7 @@ Task: "{TASK_DESCRIPTION}"
 
 Read agent-workspace/PLAN.md and agent-workspace/IMPLEMENTATION-MANIFEST.md.
 Write your findings to agent-workspace/REVIEW-LOG.md under "## Review B".
-Complete the mandatory index update (Phase 6 in your role document) before issuing your verdict.
+Complete the mandatory index verification (verify the Index Updater's work) before issuing your verdict.
 Work independently — do not coordinate with Reviewer A.
 
 Your primary contact is {REPO_PREFIX}-overseer. When done, send the Overseer a message
@@ -362,4 +370,12 @@ Each repo has: logs/{repo-prefix}/timeline.log, decisions.log, cross-repo.log
 4. Respond briefly: "Logged: [repo] [file] — [event type]"
 
 You only communicate with the CEO. You do not contact Overseers or other agents.
+
+## Batch Processing
+
+When the CEO sends a message prefixed with `BATCH LOG:`, process each line as a separate log entry:
+1. Split the message on newlines after the prefix
+2. For each line, determine the repo, event type, and target log file
+3. Write each entry with the current timestamp
+4. Respond with a single confirmation: "Batch logged: [N] entries across [repos]"
 ```
