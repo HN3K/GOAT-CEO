@@ -14,7 +14,7 @@ GOAT-CEO/
 ├── GOAT-CEO-DESIGN.md                 ← Design document for the GOAT-CEO skill
 ├── .claude/
 │   ├── agents/                        ← Custom agent type definitions
-│   │   ├── team-architect.md          ← Planner/architect (Opus)
+│   │   ├── team-architect.md          ← Planner/architect agent type — used by the Planner role (Opus)
 │   │   ├── team-ceo-assistant.md      ← CEO context scout (Opus)
 │   │   ├── team-ceo-scribe.md         ← Session logger (Haiku)
 │   │   ├── team-cross-reviewer.md     ← Cross-repo contract verifier (Sonnet)
@@ -23,7 +23,11 @@ GOAT-CEO/
 │   │   ├── team-researcher.md         ← Researchers (Opus)
 │   │   └── team-verifier.md           ← Reviewers (Sonnet)
 │   └── commands/
-│       └── goat-team/                 ← GOAT pipeline skill files
+│       ├── goat-ceo.md                ← CEO orchestration entry point (multi-repo)
+│       ├── goat-ceo/                  ← CEO supporting files
+│       │   ├── protocols.md           ← Communication flows and error recovery
+│       │   └── templates.md           ← Agent spawn prompt templates
+│       └── goat-team/                 ← GOAT pipeline skill files (single-repo)
 │           ├── goat.md                ← Full pipeline orchestrator
 │           ├── goat-plan.md           ← Plan-only variant
 │           ├── goat-review.md         ← Review-only variant
@@ -34,6 +38,7 @@ GOAT-CEO/
 │           ├── index-updater.md       ← Index updater role
 │           ├── reviewer.md            ← Reviewer role script
 │           ├── index-check.md         ← Standalone index audit
+│           ├── set-models.md          ← Model assignment configuration
 │           └── README.md              ← Pipeline documentation
 ├── specs/                             ← Reference specs for bootstrapping repos
 │   ├── indexing-system.md             ← Codebase-Index system spec
@@ -46,9 +51,14 @@ GOAT-CEO/
         └── timeline.log
 ```
 
-## GOAT Pipeline Usage
+## Usage
 
-### Full pipeline (plan → research → implement → review):
+### Multi-repo orchestration (CEO coordinates parallel pipelines across repos):
+```
+/goat-ceo
+```
+
+### Single-repo full pipeline (plan → research → implement → review):
 ```
 /goat-team:goat <task description>
 ```

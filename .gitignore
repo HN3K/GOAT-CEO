@@ -2,7 +2,8 @@
 agent-workspace/
 
 # Session logs (per-session, not committed)
-logs/
+logs/*
+!logs/.gitkeep
 
 # Previous run archives
 agent-workspace/_previous/

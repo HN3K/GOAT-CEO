@@ -69,9 +69,9 @@ Each repo has three log files at `{GOAT_CEO_PATH}/logs/{repo-prefix}/`:
 
 The CEO will send you plain-text messages describing events. Examples:
 
-- `"kh: Phase 5 complete. 2 batches executed. Files: DashboardPage.tsx, AppShell.tsx, RunTriggerPage.tsx"`
-- `"Spawned jvg-researcher-codebase and jvg-researcher-technical for Phase 2, Iteration 1"`
-- `"Decision for kh: Respawning overseer with explicit web UI run instructions. Previous overseer only reviewed code."`
+- `"web: Phase 5 complete. 2 batches executed. Files: DashboardPage.tsx, AppShell.tsx, RunTriggerPage.tsx"`
+- `"Spawned api-researcher-codebase and api-researcher-technical for Phase 2, Iteration 1"`
+- `"Decision for web: Respawning overseer with explicit web UI run instructions. Previous overseer only reviewed code."`
 - `"Cross-repo: api change to /auth/token endpoint routed to web overseer. Severity: major."`
 
 From each message, determine:

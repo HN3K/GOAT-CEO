@@ -166,7 +166,7 @@ When an Overseer messages with a spawn request:
 1. Read `.claude/commands/goat-ceo/templates.md` for the appropriate role template (Sections 4-10).
 2. Fill all `{VARIABLE_NAME}` placeholders from the Overseer's request.
 3. Spawn the agent: `subagent_type: team-{role}`, `team_name: "goat-ceo"`, `name: "{prefix}-{role}"`, `run_in_background: true`.
-4. Log: `[timestamp] AGENT_SPAWN — {prefix}-{role} spawned for Phase {N}.` → `logs/{prefix}/timeline.log`
+4. Message the Scribe: `"{prefix}: Spawned {prefix}-{role} for Phase {N}."`
 5. Confirm spawn to the requesting Overseer.
 
 ### 3.4 — CEO-Assistant Protocol
@@ -276,7 +276,7 @@ Read `.claude/commands/goat-ceo/templates.md` — use the **Cross-Repo Reviewer 
 Each Overseer reports when its pipeline reaches Phase 7. When an Overseer reports completion:
 1. Verify by reading the repo's `agent-workspace/` artifacts.
 2. Mark the repo's task as completed.
-3. Log: `[timestamp] PHASE_COMPLETE — {prefix} Phase 7 complete.` → `timeline.log`
+3. Message the Scribe: `"{prefix}: Phase 7 complete. Pipeline finished."`
 4. Shut down the Overseer: `SendMessage shutdown_request`.
 
 Track which repos are complete. Do not proceed to cross-repo verification until all repos in a group are done.
