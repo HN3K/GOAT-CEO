@@ -1,7 +1,7 @@
 ---
 name: team-cross-reviewer
 description: "Verifies cross-repo contract alignment after all repos in a related group complete. Checks API contracts, shared schemas, configuration assumptions, and breaking changes across repos. Produces a structured verification report with ALIGNED/MISMATCH/UNTESTED findings."
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Glob, Grep, Bash
 model: sonnet
 memory: project
 ---

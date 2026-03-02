@@ -19,14 +19,21 @@ system.
 |---|----------|------------|
 | A | Agent depth | Flat team — CEO spawns ALL agents. Overseers manage, don't spawn. Overseers message CEO to request new agents. |
 | B | CEO role | Informed executive — CEO-Assistant agents scout repo context via indexing/tooling. CEO makes decisions from their reports. |
-| C | Cross-repo comms | Message-only through CEO. No shared channel files. CEO relays findings to Scribe for logging in GOAT-CEO repo. |
+| C | Cross-repo comms | Message-only through CEO. No shared channel files. CEO relays findings to Scribe for logging in GOAT-CEO repo. Tiered routing: Tier 1 (informational) relayed directly, Tier 2 (decision-required) uses CEO-Assistant assessment. |
 | D | Sync strategy | Overseer-driven — Overseers track progress and report to CEO. CEO pauses dependent teams when needed, lets independent work continue. |
 | E | Message filtering | Overseers act as repo team leads. Team members route through Overseer. Direct-to-CEO messaging only for critical emergencies. |
+| E2 | Cross-repo tiers | Tier 1 (informational, additive, non-breaking): CEO relays directly Overseer→CEO→Overseer. Tier 2 (decision-required, breaking/uncertain): full CEO-Assistant assessment before routing. |
 | F | Recovery | Respawn Overseer from artifacts. agent-workspace/ serves as checkpoint. |
 | G | Final review | Dedicated cross-repo reviewer agent with access to both repos simultaneously. |
 | H | Bootstrapping | Spec markdown files passed to repo. GOAT team's first task is to set up indexing/tooling, adapting to repo conventions. CEO does not implement directly. |
 | I | Git structure | All repos are separate git repositories. No concurrency concerns. |
 | J | Assessment-first | **Key behavior:** Overseers always orient and assess before requesting any agent spawns. For verification, investigation, diagnostic, or exploratory tasks, the Overseer handles them directly. The full pipeline is only activated when the assessment determines code changes are required. This prevents unnecessary agent spawns for tasks that don't need the full pipeline. |
+| K | Repo registry | `repo-registry.json` persists repo paths, capabilities, groups, and bootstrap status across sessions. Quick Start mode reads from registry. |
+| L | Hybrid logging | Critical events (decisions, cross-repo, errors) logged immediately to Scribe. Routine events (spawns, shutdowns, phases) batched via `BATCH LOG:` messages. Reduces CEO↔Scribe overhead. |
+| M | CEO-Assistant scope | CEO-Assistants scoped to cross-repo impact assessment only. Single-repo questions route to Overseers via Assessment-First. |
+| N | Reviewer scope | Reviewers verify the Index Updater's work — they do NOT update indexes themselves. If Index Updater missed something, verdict is FAIL. |
+| O | Shared index artifact | Planner writes `index-context.md` in Phase 1. Researchers read it as base context, avoiding redundant CLI calls. |
+| P | Progressive enrichment | Index Updater scans neighboring unindexed code during each pipeline run. Every run leaves the index system more complete, not just current. |
 
 ---
 
@@ -37,42 +44,38 @@ GOAT-CEO
 │
 ├── 1. STARTUP & SESSION INITIALIZATION
 │   │
-│   ├── 1.1 Greet user, explain capability
-│   │   └── "Which repositories are we working in today?"
+│   ├── 1.0 Mode Selection
+│   │   ├── Check for repo-registry.json existence
+│   │   ├── If exists: offer Quick Start (Q) vs Full Setup (F)
+│   │   └── If not exists: go to Full Setup
 │   │
-│   ├── 1.2 Repo Registration
+│   ├── 1.Q Quick Start Flow (from registry)
+│   │   ├── Read repo-registry.json
+│   │   ├── Display registered repos table with status
+│   │   ├── User selects by number, group name, or "all"
+│   │   ├── Validate paths still exist and are git repos
+│   │   ├── Re-detect capabilities (GOAT, index, tooling)
+│   │   ├── Load relationship groups from registry
+│   │   └── Skip to 2.1 (Task Gathering)
+│   │
+│   ├── 1.1 Repo Registration (Full Guided)
 │   │   ├── User provides repo paths (1..N)
-│   │   ├── For each repo:
-│   │   │   ├── Validate path exists and is a git repository
-│   │   │   ├── Detect CLAUDE.md presence
-│   │   │   ├── Detect .claude/ structure (agents, commands, skills)
-│   │   │   ├── Detect GOAT skill availability
-│   │   │   ├── Detect codebase-index system availability
-│   │   │   └── Detect codebase-index-tools (tooling system) availability
-│   │   │
-│   │   ├── Present summary table of registered repos + capabilities
-│   │   │
-│   │   └── 1.2.1 Prerequisite Check & Bootstrap
-│   │       ├── If a repo is MISSING any required system (GOAT, index, tooling):
-│   │       │   ├── CEO notifies user: "[Repo] is missing: [list]"
-│   │       │   ├── CEO asks: "Set up the required systems, or skip this repo?"
-│   │       │   │
-│   │       │   ├── If user chooses SETUP:
-│   │       │   │   ├── CEO copies spec markdown files into the repo
-│   │       │   │   │   ├── Indexing system spec (from GOAT-CEO/specs/indexing-system.md)
-│   │       │   │   │   ├── Tooling system spec (from GOAT-CEO/specs/tooling-system.md)
-│   │       │   │   │   └── GOAT skill files (from GOAT-CEO/specs/goat-system.md)
-│   │       │   │   ├── The GOAT team for that repo will have a PRIORITY TASK:
-│   │       │   │   │   ├── Read the spec files
-│   │       │   │   │   ├── Set up the indexing and tooling systems
-│   │       │   │   │   ├── Adapt to the repo's specific conventions
-│   │       │   │   │   └── This completes BEFORE any user-requested tasks begin
-│   │       │   │   └── CEO does NOT implement directly — the team does the work
-│   │       │   │
-│   │       │   └── If user chooses SKIP:
-│   │       │       └── Repo is removed from the session
-│   │       │
-│   │       └── If all systems present: proceed normally
+│   │   ├── For each repo: validate, detect capabilities
+│   │   ├── Present summary table
+│   │   └── Create/update repo-registry.json
+│   │
+│   ├── 1.1.5 Model Profile Selection
+│   │   ├── Present profile options: Default / Economy / Premium / Custom
+│   │   ├── Default: opus planners/researchers, sonnet implementers/reviewers
+│   │   ├── Economy: sonnet planners/researchers, haiku implementers/reviewers
+│   │   ├── Premium: opus for all roles
+│   │   └── Record for agent spawning in Step 3
+│   │
+│   ├── 1.2 Prerequisite Check & Automated Bootstrap (conditional)
+│   │   ├── Options: Auto-bootstrap (A) / Manual setup (B) / Skip (C)
+│   │   ├── Auto-bootstrap: detect language, scaffold, set sourceGlobs, populate, validate
+│   │   ├── Manual: copy spec files, Overseer runs setup
+│   │   └── Mark bootstrapped: true in registry on success
 │   │
 │   └── 1.3 Relationship Mapping
 │       ├── "Which repos need to communicate with one another?"
@@ -141,7 +144,7 @@ GOAT-CEO
 │   │   │   │   └── Passes: list of what related repos are working on (if applicable)
 │   │   │   │
 │   │   │   ├── Overseer's role:
-│   │   │   │   ├── Manages the 7-phase GOAT pipeline for its repo
+│   │   │   │   ├── Manages the 6-phase GOAT pipeline for its repo
 │   │   │   │   ├── Coordinates team members within its repo
 │   │   │   │   ├── Tracks progress and filters messages to CEO
 │   │   │   │   └── Does NOT spawn agents — requests spawns from CEO
@@ -214,7 +217,7 @@ GOAT-CEO
 │   │
 │   ├── 4.1 Parallel Execution
 │   │   ├── ALL repo GOAT pipelines start simultaneously
-│   │   ├── Each Overseer independently manages its 7-phase pipeline
+│   │   ├── Each Overseer independently manages its 6-phase pipeline
 │   │   ├── Isolated repos run fully independently
 │   │   └── Related repos run independently with Overseer-driven reporting
 │   │
@@ -234,6 +237,9 @@ GOAT-CEO
 │   │   │   │   ├── What changed (old → new)
 │   │   │   │   ├── Why it changed
 │   │   │   │   └── Overseer's assessment: potentially breaking / non-breaking
+│   │   │   ├── CEO determines routing tier:
+│   │   │   │   ├── Tier 1 (informational): relay directly to affected Overseer
+│   │   │   │   └── Tier 2 (decision-required): spawn CEO-Assistant for assessment
 │   │   │   ├── CEO spawns/resumes a CEO-Assistant to assess ACTUAL impact
 │   │   │   │   ├── CEO-Assistant uses the AFFECTED repo's indexing/tooling
 │   │   │   │   │   to determine if the change truly impacts that repo
@@ -328,7 +334,7 @@ GOAT-CEO
 ├── 5. FINALIZATION
 │   │
 │   ├── 5.1 Per-Repo Completion
-│   │   ├── Each GOAT pipeline reaches Phase 7 independently
+│   │   ├── Each GOAT pipeline reaches Phase 6 independently
 │   │   ├── Overseer reports final status to CEO
 │   │   └── CEO marks repo as complete
 │   │
@@ -397,14 +403,15 @@ GOAT-CEO
     │   └── Does NOT: make decisions, contact Overseers, or modify anything outside logs/
     │
     ├── CEO-Assistant (one per repo, spawned on-demand)
-    │   ├── Role: Context scout for CEO decision-making
+    │   ├── Role: Cross-repo impact assessment specialist
     │   ├── Access: ONE specific repo's indexing/tooling system
     │   ├── Reports: findings to CEO (API surfaces, contracts, impact assessments)
+    │   ├── Scoped to cross-repo concerns only — single-repo questions route to Overseers
     │   ├── Does NOT: write to log files — CEO relays findings to Scribe for logging
     │   └── Does NOT: make decisions, communicate with Overseers, or modify code
     │
     ├── Repo Overseer (one per repo, long-running)
-    │   ├── Role: Repo team lead — manages the 7-phase GOAT pipeline
+    │   ├── Role: Repo team lead — manages the 6-phase GOAT pipeline
     │   ├── FIRST: Independently assess the task before requesting any spawns
     │   │   ├── Read code, configs, tests, logs, and existing artifacts
     │   │   ├── Run tests, query APIs, check system state
@@ -448,7 +455,7 @@ GOAT-CEO
 
 ### Note 1: Overseer Longevity
 
-The Overseer no longer spawns agents, but it still needs to survive across all 7 phases.
+The Overseer no longer spawns agents, but it still needs to survive across all 6 phases.
 Each phase involves: requesting a spawn, waiting for the team member to finish, reading
 artifacts, deciding the next phase, and requesting the next spawn. This can amount to
 dozens of turns for a single background agent, and context exhaustion mid-pipeline is
@@ -474,14 +481,15 @@ leader and sole spawn authority. Overseers request shutdowns, they do not issue 
 
 ### Note 3: Bootstrap Is a Priority Pipeline
 
-When a repo is missing the indexing/tooling/GOAT systems (section 1.2.1), the bootstrap
-process itself runs as a GOAT pipeline — the Overseer will request team members (planner,
-implementers) to read the spec files, set up the systems, and adapt them to the repo's
-conventions. This means:
+When a repo is missing the indexing/tooling/GOAT systems (section 1.2), the bootstrap
+process can run in two modes: auto-bootstrap (CEO detects language, scaffolds, and populates
+indexes automatically) or Overseer-driven (Overseer requests team members to read spec files,
+set up the systems, and adapt them to the repo's conventions). This means:
 
 - A bootstrap repo will take significantly longer before user-requested tasks begin
 - The bootstrap pipeline is the Overseer's first priority; user tasks are queued behind it
 - The bootstrap pipeline follows the same phase structure as any other GOAT task
+- Auto-bootstrap is faster for standard project layouts; Overseer-driven is more flexible
 
 This is by design — the indexing/tooling systems are prerequisites for the quality
 guarantees that the rest of the pipeline depends on.
@@ -513,6 +521,22 @@ When the CEO instructs an Overseer to pause (section 4.2, PAUSE/RESUME), the beh
 
 Pausing means "don't advance phases," not "freeze all running work."
 
+### Note 6: Repo Registry Persistence
+
+`repo-registry.json` in the GOAT-CEO repo root persists repo information across sessions.
+It stores: repo paths, capabilities (GOAT, index, tooling), bootstrap status, group membership,
+and last session timestamp. Quick Start mode reads from the registry to skip the full
+registration flow for returning users. The registry is updated at the end of each session.
+
+### Note 7: Hybrid Logging Strategy
+
+To reduce CEO↔Scribe message overhead, events are classified as critical (logged immediately)
+or routine (batched). Critical events include CEO decisions, cross-repo routing, errors, and
+pauses. Routine events include agent spawns/shutdowns, phase completions, and session lifecycle.
+The CEO sends batched events with a `BATCH LOG:` prefix, and the Scribe processes each line
+as a separate entry. This typically reduces Scribe messages by 40-60% while maintaining
+comprehensive audit trails.
+
 ---
 
 ## GOAT-CEO Repo Structure
@@ -520,6 +544,7 @@ Pausing means "don't advance phases," not "freeze all running work."
 ```
 GOAT-CEO/
 ├── GOAT-CEO-DESIGN.md          ← this document
+├── repo-registry.json          ← persists repo paths, capabilities, groups across sessions
 ├── .claude/
 │   ├── agents/                 ← custom agent type definitions
 │   └── commands/

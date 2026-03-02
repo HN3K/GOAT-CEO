@@ -1,6 +1,6 @@
 # GOAT — Agent Team Pipeline
 
-A structured multi-agent implementation pipeline for Claude Code. Spawns specialized agents (planner, researchers, implementers, reviewers) through a 7-phase workflow with built-in quality gates.
+A structured multi-agent implementation pipeline for Claude Code. Spawns specialized agents (planner, researchers, implementers, reviewers) through a 6-phase workflow with built-in quality gates.
 
 ## Prerequisites
 
@@ -15,10 +15,10 @@ This repo (`GOAT-CEO`) is the meta-orchestration repo — it contains skill defi
 1. The `.claude/commands/goat-team/` directory is already set up in this repo — no copying needed.
 
 2. Custom agent definitions live in `.claude/agents/`:
-   - `team-architect.md` — Planner/architect roles (Phases 1, 3, 4)
+   - `team-architect.md` — Planner/architect roles (Phases 1, 2)
    - `team-researcher.md` — Codebase and technical researchers (Phase 2)
-   - `team-implementer.md` — Implementers and index updater (Phases 5, 5.5)
-   - `team-verifier.md` — Reviewers (Phase 6)
+   - `team-implementer.md` — Implementers and index updater (Phases 3, 4)
+   - `team-verifier.md` — Reviewers (Phase 5)
 
 3. The `goat.md` command is already configured with GOAT-CEO project-specific rules. If you use this pipeline in another repo, copy the `.md` files and update the **Project-Specific Rules** section in `goat.md`:
 
@@ -67,7 +67,7 @@ This repo (`GOAT-CEO`) is the meta-orchestration repo — it contains skill defi
 | `technical-researcher.md` | Technical researcher — assesses approach quality |
 | `implementer.md` | Implementer agent — executes one manifest batch |
 | `index-updater.md` | Index updater — content-aware index accuracy layer |
-| `reviewer.md` | Reviewer agent — independent verification + index update |
+| `reviewer.md` | Reviewer agent — independent verification |
 | `index-check.md` | Standalone index audit and update utility |
 
 ## Agent Types
@@ -83,14 +83,12 @@ The pipeline uses custom agent definitions from `.claude/agents/`:
 
 ## Pipeline Phases
 
-1. **Planning** — Planner loads index context, creates PLAN.md
-2. **Research Loop** — Two researchers (codebase + technical) investigate in parallel
-3. **Plan Revision** — Planner reviews findings, revises plan, decides continue/exit
-4. **Manifest** — Planner creates batched IMPLEMENTATION-MANIFEST.md
-5. **Implementation** — Implementers execute batches (parallel when no file conflicts)
-5.5. **Index Update** — Index updater ensures indexes match code changes
-6. **Review** — Two independent reviewers verify + update indexes
-7. **Finalize** — Overseer evaluates verdicts, handles failures, summarizes
+1. **Planning** — Planner loads index context, creates PLAN.md and shared index-context.md
+2. **Research & Revision Loop** — Two researchers investigate in parallel, planner revises, loop until clean. On exit, planner generates IMPLEMENTATION-MANIFEST.md inline
+3. **Implementation** — Implementers execute batches (parallel when no file conflicts)
+4. **Index Update** — Index updater ensures indexes match code changes + progressive enrichment
+5. **Review** — Two independent reviewers verify implementation and Index Updater completeness
+6. **Finalize** — Overseer evaluates verdicts, handles failures, summarizes
 
 ## Artifacts
 

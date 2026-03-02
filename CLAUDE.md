@@ -12,10 +12,11 @@ This repo contains **skill definitions, spec documents, design docs, and session
 GOAT-CEO/
 ├── CLAUDE.md                          ← You are here
 ├── GOAT-CEO-DESIGN.md                 ← Design document for the GOAT-CEO skill
+├── repo-registry.json                 ← Persists repo paths, capabilities, groups across sessions
 ├── .claude/
 │   ├── agents/                        ← Custom agent type definitions
 │   │   ├── team-architect.md          ← Planner/architect agent type — used by the Planner role (Opus)
-│   │   ├── team-ceo-assistant.md      ← CEO context scout (Opus)
+│   │   ├── team-ceo-assistant.md      ← Cross-repo impact assessment (Opus)
 │   │   ├── team-ceo-scribe.md         ← Session logger (Haiku)
 │   │   ├── team-cross-reviewer.md     ← Cross-repo contract verifier (Sonnet)
 │   │   ├── team-implementer.md        ← Implementers (Sonnet)
@@ -73,15 +74,42 @@ GOAT-CEO/
 /goat-team:goat-review
 ```
 
-## Codebase Index Protocol
+## Agent Tooling Reference
+
+Agents use `codebase-index-tools` for index context. The invocation command varies by repo:
+
+| Repo Type | Invocation |
+|-----------|------------|
+| Python | `python -m codebase_index_tools <command> --format json` |
+| Node | `node codebase-index-tools/cli.js <command> --format json` |
+
+Always use `--format json`. Check `status` field before reading `data`. On error, read `data.message`.
+
+### Common CLI Commands
+
+| Command | Purpose |
+|---------|---------|
+| `search --list` | List all indexed mappings |
+| `search --query "<term>"` | Search index metadata |
+| `search --query "<term>" --in-content` | Deep search inside index content |
+| `inject --task "<task>"` | Load task-relevant context |
+| `inject --task "<task>" --include-master` | Load task context + master index |
+| `inject --file <path>` | Load context for a specific file |
+| `inject --ids <id1,id2>` | Load context by mapping ID |
+| `check` | Check for stale indexes |
+| `check --all` | Full index audit (stale + missing) |
+| `scaffold --source <dir> --dry-run` | Preview scaffold for missing index |
+| `scaffold --source <dir> --output <path> --mapping-id <id>` | Write scaffold |
+
+### Protocol
+
+Before implementation tasks, agents should:
+
+1. **Search** for relevant indexes: `search --query "<task>"`
+2. **Load** index context: `inject --task "<task>"`
+3. **After changes**, check staleness: `check`
 
 This repo does not yet have a `Codebase-Index/` directory or `codebase-index-tools` installed. These will be set up as the first task when bootstrapping this repo.
-
-Once set up, agents should follow this protocol before implementation tasks:
-
-1. Search for relevant indexes: `python -m codebase_index_tools search --query "<task>" --format json`
-2. Load index context: `python -m codebase_index_tools inject --task "<task>" --format json`
-3. After changes, check staleness: `python -m codebase_index_tools check --format json`
 
 ## Conventions
 

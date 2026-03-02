@@ -14,13 +14,12 @@ Use `TeamCreate` with team_name `goat` and description based on the task.
 
 Then create phase tasks via `TaskCreate` so the user can track progress:
 
-1. **Phase 1: Planning** — "Create implementation plan" (activeForm: "Planning implementation")
-2. **Phase 2-3: Research Loop** — "Research and validate the plan" (activeForm: "Researching and validating plan")
-3. **Phase 4: Manifest** — "Create implementation manifest" (activeForm: "Creating implementation manifest")
-4. **Phase 5: Implementation** — "Implement the planned changes" (activeForm: "Implementing changes")
-5. **Phase 5.5: Index Update** — "Update codebase indexes" (activeForm: "Updating codebase indexes")
-6. **Phase 6: Review** — "Dual independent review" (activeForm: "Reviewing implementation")
-7. **Phase 7: Finalize** — "Evaluate verdicts and finalize" (activeForm: "Evaluating and finalizing")
+1. **Phase 1: Planning** — "Create implementation plan and shared index artifact" (activeForm: "Planning implementation")
+2. **Phase 2: Research & Revision Loop** — "Research, validate, revise plan, and generate manifest" (activeForm: "Researching and revising plan")
+3. **Phase 3: Implementation** — "Implement the planned changes" (activeForm: "Implementing changes")
+4. **Phase 4: Index Update** — "Update codebase indexes" (activeForm: "Updating codebase indexes")
+5. **Phase 5: Review** — "Dual independent review" (activeForm: "Reviewing implementation")
+6. **Phase 6: Finalize** — "Evaluate verdicts and finalize" (activeForm: "Evaluating and finalizing")
 
 ---
 
@@ -61,11 +60,12 @@ Read `.claude/commands/goat-team/planner.md` in full, then execute Phase 1 (Init
 "$ARGUMENTS"
 
 Create agent-workspace/ and initialize PLAN.md, ISSUE-TRACKER.md, and RESEARCH-LOG.md per the instructions in your role document.
+Write the shared index artifact to agent-workspace/index-context.md as instructed.
 
 When done, send me a message confirming the plan is ready.
 ```
 
-**On completion:** Read `agent-workspace/PLAN.md` and `agent-workspace/RESEARCH-LOG.md`. Verify the plan exists and the `PLANNER_SIGNAL: RESEARCH_START` signal is present. Mark planner task completed, shut down planner.
+**On completion:** Read `agent-workspace/PLAN.md`, `agent-workspace/RESEARCH-LOG.md`, and `agent-workspace/index-context.md`. Verify the plan exists, the `PLANNER_SIGNAL: RESEARCH_START` signal is present, and the shared index artifact was written. Mark planner task completed, shut down planner.
 
 Tell the user: "Phase 1 complete: Plan created — [N] implementation steps, [N] risks/open questions."
 
@@ -73,9 +73,13 @@ Mark Phase 1 task as `completed`.
 
 ---
 
-## Phase 2 — Research Loop
+## Phase 2 — Research & Revision Loop
 
-Mark Phase 2-3 task as `in_progress`. Create TWO agent tasks, then spawn both **simultaneously**:
+Mark Phase 2 task as `in_progress`.
+
+### 2a. Research Iteration
+
+Create TWO agent tasks, then spawn both **simultaneously**:
 
 **Codebase Researcher:**
 - **subagent_type:** `team-researcher`
@@ -117,9 +121,7 @@ When done, send me a message with your issue count.
 
 Tell the user: "Phase 2 iteration {N}: Codebase researcher found [N] issues, Technical researcher found [N] issues."
 
----
-
-## Phase 3 — Plan Revision
+### 2b. Plan Revision & Loop Decision
 
 Create an agent task, then spawn:
 
@@ -138,48 +140,24 @@ Read agent-workspace/PLAN.md, agent-workspace/RESEARCH-LOG.md, and agent-workspa
 Review all researcher findings from this iteration. Revise the plan as needed.
 Evaluate exit criteria and write your signal: LOOP_CONTINUE or LOOP_EXIT.
 
-When done, send me a message with your signal (LOOP_CONTINUE or LOOP_EXIT).
+If LOOP_EXIT: also generate the Implementation Manifest inline — execute Phase 3 (Implementation Manifest) from your role document immediately. Write agent-workspace/IMPLEMENTATION-MANIFEST.md before signaling.
+
+When done, send me a message with your signal (LOOP_CONTINUE or LOOP_EXIT) and, if exiting, confirmation that the manifest is ready.
 ```
 
 **On completion:** Read `RESEARCH-LOG.md` for the signal:
-- `LOOP_CONTINUE` → Mark task completed, shut down planner, go back to Phase 2 with iteration N+1
-- `LOOP_EXIT` → Mark task completed, shut down planner, proceed to Phase 4
+- `LOOP_CONTINUE` → Mark task completed, shut down planner, go back to 2a with iteration N+1
+- `LOOP_EXIT` → Read the manifest. Verify it has batches, parallelism rules, completion criteria, and `PLANNER_SIGNAL: MANIFEST_READY`. Mark task completed, shut down planner.
 
 **If iteration count > 3:** Ask the user whether to continue, adjust scope, or proceed with known gaps.
 
-On loop exit, mark Phase 2-3 task as `completed`. Tell the user: "Research loop complete after {N} iterations."
+On loop exit, mark Phase 2 task as `completed`. Tell the user: "Research loop complete after {N} iterations. Manifest ready — {N} batches."
 
 ---
 
-## Phase 4 — Implementation Manifest
+## Phase 3 — Implementation
 
-Mark Phase 4 task as `in_progress`. Create an agent task, then spawn:
-
-- **subagent_type:** `team-architect`
-- **name:** `planner-manifest`
-
-**Prompt:**
-```
-You are the Planner for the GOAT implementation team.
-Read `.claude/commands/goat-team/planner.md` in full, then execute Phase 3 (Implementation Manifest).
-
-Task: "$ARGUMENTS"
-
-Read all files in agent-workspace/. The research loop exited cleanly at iteration {N}.
-Write agent-workspace/IMPLEMENTATION-MANIFEST.md with batched implementation tasks per your role document.
-
-When done, send me a message confirming the manifest is ready.
-```
-
-**On completion:** Read the manifest. Verify it has batches, parallelism rules, completion criteria, and `PLANNER_SIGNAL: MANIFEST_READY`. Mark task completed, shut down planner.
-
-Mark Phase 4 task as `completed`. Tell the user: "Manifest ready — {N} batches."
-
----
-
-## Phase 5 — Implementation
-
-Mark Phase 5 task as `in_progress`. Read `agent-workspace/IMPLEMENTATION-MANIFEST.md` to determine batch structure.
+Mark Phase 3 task as `in_progress`. Read `agent-workspace/IMPLEMENTATION-MANIFEST.md` to determine batch structure.
 
 For each batch, create an agent task (use `addBlockedBy` for sequential batches), then spawn:
 
@@ -205,13 +183,13 @@ When done, send me a message confirming your batch is complete.
 
 **On completion:** Wait for all implementer messages. Verify each batch is COMPLETE. Mark all tasks completed, shut down all implementers.
 
-Mark Phase 5 task as `completed`. Tell the user: "Implementation complete — {N} batches done."
+Mark Phase 3 task as `completed`. Tell the user: "Implementation complete — {N} batches done."
 
 ---
 
-## Phase 5.5 — Index Content Update
+## Phase 4 — Index Content Update
 
-Mark Phase 5.5 task as `in_progress`. Create an agent task, then spawn:
+Mark Phase 4 task as `in_progress`. Create an agent task, then spawn:
 
 - **subagent_type:** `team-implementer`
 - **name:** `index-updater`
@@ -232,13 +210,13 @@ When done, send me a message confirming the index update is complete.
 
 **On completion:** Read `REVIEW-LOG.md`. Verify `## Index Content Update`, `### Content Accuracy Updates`, and `INDEX_UPDATER_SIGNAL: COMPLETE` are present. If missing, message the agent to fix. Otherwise mark task completed, shut down.
 
-Mark Phase 5.5 task as `completed`. Tell the user: "Index update complete."
+Mark Phase 4 task as `completed`. Tell the user: "Index update complete."
 
 ---
 
-## Phase 6 — Review
+## Phase 5 — Review
 
-Mark Phase 6 task as `in_progress`. Create TWO agent tasks, then spawn both **simultaneously**:
+Mark Phase 5 task as `in_progress`. Create TWO agent tasks, then spawn both **simultaneously**:
 
 **Reviewer A:**
 - **subagent_type:** `team-verifier`
@@ -253,7 +231,7 @@ Task: "$ARGUMENTS"
 
 Read agent-workspace/PLAN.md and agent-workspace/IMPLEMENTATION-MANIFEST.md.
 Write your findings to agent-workspace/REVIEW-LOG.md under "## Review A".
-Complete the mandatory index update (Phase 6 in your role document) before issuing your verdict.
+Complete the mandatory index verification (verify the Index Updater's work) before issuing your verdict.
 
 When done, send me a message with your verdict (PASS or FAIL).
 ```
@@ -271,32 +249,32 @@ Task: "$ARGUMENTS"
 
 Read agent-workspace/PLAN.md and agent-workspace/IMPLEMENTATION-MANIFEST.md.
 Write your findings to agent-workspace/REVIEW-LOG.md under "## Review B".
-Complete the mandatory index update (Phase 6 in your role document) before issuing your verdict.
+Complete the mandatory index verification (verify the Index Updater's work) before issuing your verdict.
 
 When done, send me a message with your verdict (PASS or FAIL).
 ```
 
 **On completion:** Wait for both messages. Mark both tasks completed, shut down both.
 
-Mark Phase 6 task as `completed`. Tell the user: "Review complete — A: [verdict], B: [verdict]."
+Mark Phase 5 task as `completed`. Tell the user: "Review complete — A: [verdict], B: [verdict]."
 
 ---
 
-## Phase 7 — Evaluate & Finalize
+## Phase 6 — Evaluate & Finalize
 
-Mark Phase 7 task as `in_progress`. Read `agent-workspace/REVIEW-LOG.md` and evaluate.
+Mark Phase 6 task as `in_progress`. Read `agent-workspace/REVIEW-LOG.md` and evaluate.
 
 **Hard gates before accepting PASS:**
-1. `## Index Content Update` with `### Content Accuracy Updates` exists
-2. `## Final Index Check` exists with `stale === 0` and `missing === 0`
+1. `## Index Content Update` with `### Content Accuracy Updates` exists (Phase 4 output)
+2. `## Index Verification` exists with clean check results
 
-**Both PASS + gates pass:** Mark Phase 7 completed. Summarize to user and clean up team.
+**Both PASS + gates pass:** Mark Phase 6 completed. Summarize to user and clean up team.
 
 **Any FAIL — Critical:** Ask the user for guidance (may need replanning).
 
-**Any FAIL — Major only:** Spawn targeted implementer to fix, re-run Phase 6. Max 2 cycles before asking user.
+**Any FAIL — Major only:** Spawn targeted implementer to fix, re-run Phase 5. Max 2 cycles before asking user.
 
-**Any FAIL — Minor only:** Spawn single implementer to fix, re-run Phase 6. If still fails, ask user.
+**Any FAIL — Minor only:** Spawn single implementer to fix, re-run Phase 5. If still fails, ask user.
 
 ---
 

@@ -5,6 +5,18 @@
 
 ## Cross-Repo Communication Flows
 
+### Routing Tiers
+
+Cross-repo messages are classified into two tiers before routing:
+
+**Tier 1 — Informational (lightweight):**
+The change is non-breaking and informational. CEO relays the message directly to the affected Overseer without spawning a CEO-Assistant. Examples: API additions (not changes), new endpoints, configuration additions, progress updates relevant to a dependent repo.
+
+**Tier 2 — Decision-Required (full assessment):**
+The change may be breaking or requires CEO decision. CEO spawns a CEO-Assistant to assess actual impact before routing. Examples: API signature changes, schema modifications, removed endpoints, behavioral changes, dependency version bumps.
+
+**Tier determination:** The CEO classifies each OUTBOUND flag from an Overseer. If the Overseer's assessment says "non-breaking" AND the change is additive (not modifying or removing existing surfaces), it is Tier 1. Everything else is Tier 2.
+
 ### OUTBOUND — Change That May Affect Another Repo
 
 **Trigger:** Overseer determines a completed change touches a shared contract, API, schema, or interface.
@@ -19,6 +31,9 @@
    - What changed (old → new, specific files/functions/endpoints)
    - Why it changed (task context)
    - Overseer's preliminary assessment: potentially breaking / likely non-breaking
+3.5. CEO determines routing tier:
+   - **Tier 1 (informational):** Skip to step 9 — relay the Overseer's message directly to the affected Overseer. Log via Scribe.
+   - **Tier 2 (decision-required):** Continue to step 4 for full CEO-Assistant assessment.
 4. CEO spawns or resumes a CEO-Assistant (`ceo-assistant-{affected-prefix}`) targeting the AFFECTED repo.
 5. CEO-Assistant queries the affected repo's indexing/tooling to assess actual impact:
    - Searches for usages of the changed API/schema/contract
@@ -314,3 +329,35 @@ The Scribe is spawned at session start (Step 3.1) and runs for the entire sessio
 - `"Cross-repo: api auth change affects web. Routed to web-overseer. Severity: major."`
 
 **CEO-Assistant reports:** When a CEO-Assistant completes a mission, the CEO relays the findings to the Scribe for logging. The CEO-Assistant itself does not write to log files.
+
+---
+
+### Hybrid Logging Strategy
+
+Not all events require immediate logging. The CEO batches routine events and sends them as a single message to reduce communication overhead.
+
+**Critical events (log immediately):**
+- `DECISION` — CEO decisions affecting repo strategy
+- `CROSS_REPO_ROUTE` — cross-repo routing events
+- `IMPACT_ASSESSMENT` — impact assessments
+- `ERROR` — errors and escalations
+- `PAUSE` / `RESUME` — dependency pauses
+
+**Routine events (batch and log periodically):**
+- `AGENT_SPAWN` — agent spawned
+- `AGENT_SHUTDOWN` — agent shut down
+- `PHASE_COMPLETE` — phase completions
+- `SESSION_START` / `SESSION_END` — session lifecycle
+- `CONTEXT_REPORT` — CEO-Assistant context reports
+
+**Batch message format:**
+The CEO sends batched events with a `BATCH LOG:` prefix:
+```
+BATCH LOG:
+- kh: Spawned kh-planner for Phase 1.
+- kh: Phase 1 complete. Artifacts: PLAN.md, index-context.md.
+- jvg: Spawned jvg-researcher-codebase and jvg-researcher-technical for Phase 2, Iteration 1.
+```
+The Scribe processes each line as a separate log entry with the current timestamp.
+
+**Batch trigger:** CEO sends batched logs after completing a phase transition, after spawning/shutting down a group of agents, or at natural pauses in orchestration. Do not hold routine events longer than one phase boundary.

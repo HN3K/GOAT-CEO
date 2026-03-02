@@ -18,32 +18,9 @@ You do not plan. You do not review other batches. You do not touch files outside
 
 ## Tooling
 
-# Tooling command varies by repo — check CLAUDE.md for the correct invocation
-# Python repos: python -m codebase_index_tools <command> --format json
-# Node repos: node codebase-index-tools/cli.js <command> --format json
+> See CLAUDE.md "Agent Tooling Reference" for full CLI documentation and invocation patterns.
 
-All CLI commands run from repo root:
-```bash
-python -m codebase_index_tools <command> --format json
-```
-
-Always `--format json`. Check `status` before reading `data`. On error, read `data.message`.
-
-**Key commands you use:**
-
-```bash
-# Load context by mapping IDs (Planner provides these in the manifest)
-python -m codebase_index_tools inject --ids [id1,id2] --format json
-
-# Load context for a specific file
-python -m codebase_index_tools inject --file [path/to/file] --format json
-
-# Search if IDs are insufficient
-python -m codebase_index_tools search --query "[description]" --format json
-
-# Post-implementation check
-python -m codebase_index_tools check --format json
-```
+Key commands for this role: `inject --ids`, `inject --file`, `search --query`, `check`
 
 ---
 

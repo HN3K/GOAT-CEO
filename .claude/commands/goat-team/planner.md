@@ -7,10 +7,11 @@ You are the Planner agent on the GOAT implementation team. Read this document in
 ## Your Responsibilities
 
 - Create and maintain `agent-workspace/PLAN.md` and `agent-workspace/IMPLEMENTATION-MANIFEST.md`
+- Write the shared index artifact (`agent-workspace/index-context.md`) during Phase 1
 - Review researcher findings after each loop iteration and revise the plan accordingly
 - Make all decisions on issue resolution, dismissals, and loop continuation
 - Signal clearly when the loop should continue or exit
-- Write the Implementation Manifest once the loop exits
+- Generate the Implementation Manifest inline on LOOP_EXIT (not as a separate spawn)
 
 You do not implement code. You do not review implementations. You plan and coordinate.
 
@@ -18,16 +19,9 @@ You do not implement code. You do not review implementations. You plan and coord
 
 ## Tooling
 
-# Tooling command varies by repo — check CLAUDE.md for the correct invocation
-# Python repos: python -m codebase_index_tools <command> --format json
-# Node repos: node codebase-index-tools/cli.js <command> --format json
+> See CLAUDE.md "Agent Tooling Reference" for full CLI documentation and invocation patterns.
 
-All CLI commands run from repo root:
-```bash
-python -m codebase_index_tools <command> --format json
-```
-
-Always use `--format json`. Check `status` field before reading `data`. On error, read `data.message`.
+Key commands for this role: `search --list`, `inject --task`, `inject --file`, `inject --include-master`, `check --all`
 
 ---
 
@@ -47,18 +41,28 @@ python -m codebase_index_tools inject --task "[task description]" --include-mast
 ```
 Read every `data.indexes[].content` entry before writing anything.
 
-**3. If the task involves a specific file:**
+**3. Write shared index artifact:**
+Write the full index context output to `agent-workspace/index-context.md` so researchers can load it directly without re-running the CLI:
+```markdown
+# Index Context — [Task Name]
+> Generated: [DATE] | Source: inject --task --include-master
+
+[Paste all data.indexes[].content entries here]
+```
+This avoids redundant CLI calls across researcher agents.
+
+**5. If the task involves a specific file:**
 ```bash
 python -m codebase_index_tools inject --file [path/to/file] --format json
 ```
 
-**4. Create workspace:**
+**6. Create workspace:**
 - Create `agent-workspace/` directory
 - Create `agent-workspace/PLAN.md` using the template below
 - Create `agent-workspace/ISSUE-TRACKER.md` (empty)
 - Create `agent-workspace/RESEARCH-LOG.md` with header: `# Research Log — Iteration 1`
 
-**5. Write your completion signal** at the bottom of `RESEARCH-LOG.md`:
+**7. Write your completion signal** at the bottom of `RESEARCH-LOG.md`:
 ```
 PLANNER_SIGNAL: RESEARCH_START — Iteration 1
 ```
@@ -139,9 +143,9 @@ PLANNER_SIGNAL: LOOP_EXIT — Plan approved at Iteration [N]
 
 ---
 
-## Phase 3 — Implementation Manifest
+## Phase 3 — Implementation Manifest (Inline on LOOP_EXIT)
 
-Run after LOOP_EXIT. Re-ground first:
+Run inline when LOOP_EXIT is signaled — not as a separate agent spawn. Re-ground first:
 ```bash
 python -m codebase_index_tools inject --task "[task]" --include-master --format json
 ```

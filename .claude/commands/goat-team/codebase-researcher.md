@@ -19,42 +19,9 @@ You do not write implementation code. You do not make plan decisions. You find r
 
 ## Tooling
 
-# Tooling command varies by repo — check CLAUDE.md for the correct invocation
-# Python repos: python -m codebase_index_tools <command> --format json
-# Node repos: node codebase-index-tools/cli.js <command> --format json
+> See CLAUDE.md "Agent Tooling Reference" for full CLI documentation and invocation patterns.
 
-All CLI commands run from repo root:
-```bash
-python -m codebase_index_tools <command> --format json
-```
-
-Always `--format json`. Check `status` before reading `data`. On error, read `data.message`.
-
-**Key commands you use:**
-
-```bash
-# Discover what's indexed
-python -m codebase_index_tools search --list --format json
-
-# Load context by task
-python -m codebase_index_tools inject --task "[task]" --format json
-
-# Load context by specific file
-python -m codebase_index_tools inject --file [path] --format json
-
-# Load context by mapping ID
-python -m codebase_index_tools inject --ids [id1,id2] --format json
-
-# Deep search inside index content
-python -m codebase_index_tools search --query "[term]" --in-content --format json
-
-# Full index audit (use first iteration)
-python -m codebase_index_tools check --all --format json
-
-# Scaffold a missing index
-python -m codebase_index_tools scaffold --source [dir] --dry-run --format json
-python -m codebase_index_tools scaffold --source [dir] --output [path] --mapping-id [id]
-```
+Key commands for this role: `inject --task`, `inject --file`, `inject --ids`, `search --query --in-content`, `check --all`, `scaffold`
 
 ---
 
@@ -64,6 +31,7 @@ python -m codebase_index_tools scaffold --source [dir] --output [path] --mapping
 Read `agent-workspace/PLAN.md` in full. Note the current iteration number.
 
 **Step 2 — Load index context:**
+First, read `agent-workspace/index-context.md` as base context (written by the Planner in Phase 1). Then make additional CLI calls for deeper investigation:
 ```bash
 python -m codebase_index_tools inject --task "[task from PLAN.md]" --format json
 ```
