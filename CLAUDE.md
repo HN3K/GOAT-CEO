@@ -15,8 +15,12 @@ GOAT-CEO/
 ├── .claude/
 │   ├── agents/                        ← Custom agent type definitions
 │   │   ├── team-architect.md          ← Planner/architect (Opus)
-│   │   ├── team-researcher.md         ← Researchers (Opus)
+│   │   ├── team-ceo-assistant.md      ← CEO context scout (Opus)
+│   │   ├── team-ceo-scribe.md         ← Session logger (Haiku)
+│   │   ├── team-cross-reviewer.md     ← Cross-repo contract verifier (Sonnet)
 │   │   ├── team-implementer.md        ← Implementers (Sonnet)
+│   │   ├── team-overseer.md           ← Repo pipeline manager (Opus)
+│   │   ├── team-researcher.md         ← Researchers (Opus)
 │   │   └── team-verifier.md           ← Reviewers (Sonnet)
 │   └── commands/
 │       └── goat-team/                 ← GOAT pipeline skill files

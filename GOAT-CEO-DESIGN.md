@@ -79,9 +79,9 @@ GOAT-CEO
 │       ├── "Which repos should be fully isolated?"
 │       ├── User defines relationship groups:
 │       │   ├── RELATED GROUP(s) — repos that share information
-│       │   │   └── Example: [KH-UI-AI, JarvisVibeGraph] — "API consumer ↔ provider"
+│       │   │   └── Example: [my-api-service, my-web-app] — "API consumer ↔ provider"
 │       │   └── ISOLATED REPO(s) — repos with no cross-repo traffic
-│       │       └── Example: [Cursed] — "standalone game, no dependencies"
+│       │       └── Example: [my-docs-site] — "standalone site, no dependencies"
 │       └── CEO builds a Relationship Graph:
 │           ├── Nodes = repos
 │           ├── Edges = communication channels (bidirectional or directional)
@@ -126,9 +126,9 @@ GOAT-CEO
 │   │   ├── CEO creates ONE team: "goat-ceo"
 │   │   ├── ALL agents across ALL repos are members of this team
 │   │   └── Agent naming convention: [repo-prefix]-[role]
-│   │       ├── Examples: kh-overseer, kh-planner, kh-researcher-codebase
-│   │       ├── Examples: jvg-overseer, jvg-planner, jvg-implementer-1
-│   │       └── CEO-level agents: ceo-assistant-kh, ceo-assistant-jvg, cross-reviewer
+│   │       ├── Examples: api-overseer, api-planner, api-researcher-codebase
+│   │       ├── Examples: web-overseer, web-planner, web-implementer-1
+│   │       └── CEO-level agents: ceo-assistant-api, ceo-assistant-web, cross-reviewer
 │   │
 │   ├── 3.2 Per-Repo Overseer Spawning
 │   │   ├── For each repo with tasks:
@@ -391,12 +391,19 @@ GOAT-CEO
     │   ├── Informed by: CEO-Assistants that scout repo context via indexing/tooling
     │   └── Does NOT: touch code, implement changes, or work within any single repo
     │
+    ├── CEO-Scribe (one per session, persistent)
+    │   ├── Role: Dedicated session logger — receives events from CEO, writes formatted log entries
+    │   ├── Model: Haiku (lightweight — formatting and writing only, no analysis)
+    │   ├── Spawned: at session start (Step 3.1), before any other agents
+    │   ├── Writes to: GOAT-CEO/logs/[repo-prefix]/ (all log files)
+    │   ├── Keeps: logging off the CEO's terminal — CEO sends brief messages, Scribe writes entries
+    │   └── Does NOT: make decisions, contact Overseers, or modify anything outside logs/
+    │
     ├── CEO-Assistant (one per repo, spawned on-demand)
     │   ├── Role: Context scout for CEO decision-making
     │   ├── Access: ONE specific repo's indexing/tooling system
     │   ├── Reports: findings to CEO (API surfaces, contracts, impact assessments)
-    │   ├── Writes to: GOAT-CEO/logs/[repo-prefix]/ (detailed entries when active;
-    │   │   CEO writes routine entries directly — see section 3.4)
+    │   ├── Findings relayed to Scribe for logging (CEO-Assistants do not write to logs directly)
     │   └── Does NOT: make decisions, communicate with Overseers, or modify code
     │
     ├── Repo Overseer (one per repo, long-running)
@@ -426,9 +433,9 @@ GOAT-CEO
     │   │   ├── Can message CEO directly ONLY for critical emergencies
     │   │   └── Follow standard GOAT role scripts from the repo's .claude/commands/
     │   │
-    │   └── Naming examples for 2 repos (kh = KH-UI-AI, jvg = JarvisVibeGraph):
-    │       ├── kh-overseer, kh-planner, kh-researcher-codebase, kh-implementer-1
-    │       └── jvg-overseer, jvg-planner, jvg-researcher-technical, jvg-reviewer-a
+    │   └── Naming examples for 2 repos (api = my-api-service, web = my-web-app):
+    │       ├── api-overseer, api-planner, api-researcher-codebase, api-implementer-1
+    │       └── web-overseer, web-planner, web-researcher-technical, web-reviewer-a
     │
     └── Cross-Repo Reviewer (spawned once at finalization, for related groups)
         ├── Role: Verifies cross-repo contract alignment after all repos complete

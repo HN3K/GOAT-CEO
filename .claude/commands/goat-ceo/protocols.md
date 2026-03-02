@@ -150,48 +150,107 @@ Read agent-workspace/ to re-ground yourself before requesting any new spawns.
 
 ## Progress Dashboard
 
-CEO updates the dashboard after each phase completion, cross-repo event, pause/resume, or on user request.
+CEO updates and displays the dashboard after each phase completion, cross-repo event, pause/resume, or error. The dashboard is the primary output the user sees — keep it current and accurate.
+
+**Update triggers:** phase completion, cross-repo event, pause/resume, error/escalation, user request.
+
+**Display rule:** Only show the dashboard and CEO decisions to the user. Suppress verbose logging output (log entries are written to files silently).
 
 ### Session Dashboard Format
 
-```
-## Session Dashboard — {ISO_TIMESTAMP}
+The dashboard uses a tree-style layout with a three-part structure per repo:
+1. **Title line** — repo name + task, then thin horizontal line (`───`) extending to the right margin
+2. **Progress line** — indented below: block-character progress bar, phase info, activity, agents
+3. **Detail tree** — cumulative metrics (impl, review, research) as branches
 
-| Repo | Phase | Status | Active Agents | Issues | Cross-Repo Events |
-|------|-------|--------|---------------|--------|-------------------|
-| {prefix} | {N} — {phase-name} | running | {agent-list} | {count} | {count} |
-| {prefix} | {N} — {phase-name} | paused | {agent-list} | {count} | {count} |
-| {prefix} | {N} — {phase-name} | blocked | {agent-list} | {count} | {count} |
-| {prefix} | complete | done | — | {count} | {count} |
-```
+Framed by a double-line (`════`) header and footer. Output as regular text.
 
-**Status values:** `running` | `paused` | `blocked` | `complete`
-
-**Issues:** count by severity — format as `{critical}/{major}/{minor}` (e.g., `0/1/2`)
-
-**Cross-Repo Events:** cumulative count of OUTBOUND flags, INBOUND notifications, and REQUESTs for this repo.
-
-### Per-Repo Detail (on request or when escalating)
+**Mid-session example:**
 
 ```
-### {prefix} — Phase {N}: {phase-name}
-- Status: {running|paused|blocked|complete}
-- Active agents: {list or none}
-- Last event: {description} at {timestamp}
-- Open issues: {list or none}
-- Cross-repo items: {list or none}
+SESSION DASHBOARD                                              {ISO_TIMESTAMP}
+════════════════════════════════════════════════════════════════════════════════════
+
+api — Fix 3 web UI bugs ───────────────────────────────────────────────────────────
+  █████▓░░  5/7 Implementation (running) | Batch 2/4 | Agents: api-implementer-2
+  ├── Research: 3 found (1C 2M) — resolved > clean pass
+  └── Review: pending
+
+web — Verify auth tokens ──────────────────────────────────────────────────────────
+  ▓  Assessment (done) — No code changes needed.
+
+db — Migrate user schema ──────────────────────────────────────────────────────────
+  ██▓░░░░░  2/7 Research, Iter 1 (running) | Agents: db-researcher-codebase, -tech
+  └── Research: I1 in progress...
+
+jvg — CSharpNormalizer ────────────────────────────────────────────────────────────
+  ████████  7/7 Complete | 4 files changed | commit: 3200e25
+  ├── Impl: 4/4 batches
+  ├── Review: A: PASS, B: PASS
+  └── Research: 5 found (1C 3M 1m) — resolved > clean pass
+
+Cross-Repo ────────────────────────────────────────────────────────────────────────
+  1 outbound (1 confirmed) | 1 inbound | 0 pauses | 0 conflicts
+
+════════════════════════════════════════════════════════════════════════════════════
 ```
 
-### Cross-Repo Summary
+**Completed session example:**
 
 ```
-### Cross-Repo Activity
-- Outbound flags: {count} ({confirmed-impact} confirmed impact, {false-alarm} false alarms)
-- Inbound notifications: {count}
-- Info requests: {count}
-- Active pauses: {list of paused repos and reason}
-- Unresolved conflicts: {count}
+SESSION COMPLETE                                               {ISO_TIMESTAMP}
+════════════════════════════════════════════════════════════════════════════════════
+
+kh — Fix 3 web UI bugs ────────────────────────────────────────────────────────────
+  ████████  7/7 Complete | 3 files changed
+  ├── Impl: 2/2 batches
+  ├── Review: A: PASS, B: PASS
+  └── Research: 0 found — clean
+
+kh — Verify mapper depths ─────────────────────────────────────────────────────────
+  ▓  Assessment (done) — No code changes needed.
+
+jvg — CSharpNormalizer ────────────────────────────────────────────────────────────
+  ████████  7/7 Complete | 4 files changed | commit: 3200e25
+  ├── Impl: 4/4 batches
+  ├── Review: A: PASS, B: PASS
+  └── Research: 5 found (1C 3M 1m) — resolved > clean pass
+
+════════════════════════════════════════════════════════════════════════════════════
 ```
+
+### Layout Rules
+
+**Frame:** Double-line (`════`) header underline and footer. Header line has `SESSION DASHBOARD` or `SESSION COMPLETE` left-aligned, timestamp right-aligned.
+
+**Title line:** `{prefix} — {task} ───`. Thin horizontal line (`─`) extends to a consistent right margin (~80 chars). Separates each repo visually.
+
+**Progress bar:** Block characters for instant visual completion:
+- `█` = phase complete
+- `▓` = phase active
+- `░` = phase pending
+- 8 segments representing phases 0–7. Assessment-only repos use a single `▓`.
+
+**Progress line:** Indented 2 spaces. Format: `{bar}  {N}/7 {phase-name} ({status}) | {activity} | Agents: {list}`.
+- Status values: `running`, `paused`, `blocked`, `done`
+- Activity: current batch, iteration, or step (when applicable)
+- Agents: active agent names (omit segment when none)
+
+**Detail tree:** Indented 2 spaces, using `├──` (intermediate) and `└──` (last). Only include lines that apply:
+- **Impl** — `{N}/{total} batches`
+- **Review** — `A: PASS/FAIL, B: PASS/FAIL` or `pending`
+- **Research** — compact single-line format: `{found} found ({severity}) — resolved > clean pass`
+  - Severity key: `C` = critical, `M` = major, `m` = minor
+  - `>` separates iterations: text before `>` is iteration 1 result, after is iteration 2
+  - In-progress: `I1 in progress...`
+  - Single iteration with no issues: `0 found — clean`
+- **Assessment** — Phase 0 single line: `Assessment (done) — {result}`
+- **Files changed** — count of modified files (shown for repos past implementation)
+- **Commit** — hash (shown for completed repos that committed)
+
+**Omit what doesn't apply.** A repo in Phase 2 has no Impl or Review. A Phase 0 repo shows only the assessment line. Only display what exists.
+
+**Cross-Repo section:** Only shown when related groups exist. Uses the same thin-line title. Omit for isolated-only sessions.
 
 ---
 
@@ -212,38 +271,40 @@ Example: `2026-03-01T14:23:07Z PHASE_COMPLETE — {prefix} Phase 2 (Research) co
 
 ---
 
-### CEO Direct Logging
+### Scribe-Managed Logging
 
-**When:** CEO writes these entries directly using the Write tool (no CEO-Assistant needed).
-**Event types:**
+**All logging is handled by the Scribe agent (`ceo-scribe`).** The CEO does not write log entries directly. Instead, the CEO sends brief messages to the Scribe describing events, and the Scribe writes properly formatted entries to the correct files.
 
-| Event Type | Log File | Description |
+The Scribe is spawned at session start (Step 3.1) and runs for the entire session.
+
+**Event types the Scribe handles:**
+
+| Event Type | Log File | Triggered By |
 |------------|----------|-------------|
-| `PHASE_COMPLETE` | `timeline.log` | A repo's GOAT phase reached completion |
-| `AGENT_SPAWN` | `timeline.log` | CEO spawned an agent (include name, role, phase) |
-| `AGENT_SHUTDOWN` | `timeline.log` | CEO shut down an agent (include name, reason) |
-| `PAUSE` | `timeline.log` | CEO paused a repo (include repo, reason) |
-| `RESUME` | `timeline.log` | CEO resumed a repo (include repo, trigger) |
-| `DECISION` | `decisions.log` | CEO made a decision affecting repo strategy |
-| `CROSS_REPO_ROUTE` | `cross-repo.log` | CEO routed cross-repo info (include source, dest, summary) |
-| `ERROR` | `timeline.log` | Error detected or escalated |
-
----
-
-### CEO-Assistant Logging
-
-**When:** CEO-Assistants write detailed analytical entries when spawned.
-**Event types:**
-
-| Event Type | Log File | Description |
-|------------|----------|-------------|
-| `CONTEXT_REPORT` | `timeline.log` | General repo context gathered for CEO |
-| `IMPACT_ASSESSMENT` | `cross-repo.log` | Assessed whether a change impacts this repo |
-| `CROSS_REPO_ANALYSIS` | `cross-repo.log` | Full analysis of cross-repo dependency or conflict |
-| `DEPENDENCY_SCAN` | `timeline.log` | Scanned repo for dependencies (during Step 2.2 or post-bootstrap) |
+| `SESSION_START` | `timeline.log` | CEO message at session start |
+| `SESSION_END` | `timeline.log` | CEO message at session end |
+| `PHASE_COMPLETE` | `timeline.log` | CEO message after Overseer reports |
+| `AGENT_SPAWN` | `timeline.log` | CEO message after spawning an agent |
+| `AGENT_SHUTDOWN` | `timeline.log` | CEO message after shutting down an agent |
+| `PAUSE` | `timeline.log` | CEO message when pausing a repo |
+| `RESUME` | `timeline.log` | CEO message when resuming a repo |
+| `ERROR` | `timeline.log` | CEO message when error detected |
+| `DECISION` | `decisions.log` | CEO message when making a strategic decision |
+| `CROSS_REPO_ROUTE` | `cross-repo.log` | CEO message when routing info between repos |
+| `IMPACT_ASSESSMENT` | `cross-repo.log` | CEO relays CEO-Assistant findings to Scribe |
+| `CONTEXT_REPORT` | `timeline.log` | CEO relays CEO-Assistant findings to Scribe |
 
 **File targets:**
 
+- `logs/{repo-prefix}/timeline.log` — Phase progression and all events for this repo
 - `logs/{repo-prefix}/decisions.log` — CEO decisions affecting this specific repo
 - `logs/{repo-prefix}/cross-repo.log` — All cross-repo communications routed through CEO for this repo
-- `logs/{repo-prefix}/timeline.log` — Phase progression and all events for this repo
+
+**CEO-to-Scribe message examples:**
+
+- `"kh: Spawned kh-planner for Phase 1. Task: Fix 3 web UI bugs."`
+- `"jvg: Phase 2 complete. Research Iter 1: 5 issues (1C 3M 1m). All resolved in plan revision."`
+- `"Decision for kh: Respawning overseer — previous one only reviewed code, did not run actual mapper."`
+- `"Cross-repo: api auth change affects web. Routed to web-overseer. Severity: major."`
+
+**CEO-Assistant reports:** When a CEO-Assistant completes a mission, the CEO relays the findings to the Scribe for logging. The CEO-Assistant itself does not write to log files.
