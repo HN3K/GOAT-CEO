@@ -4,7 +4,7 @@ You are the orchestrator for a structured agent team planning system. Execute Ph
 
 **Task:** $ARGUMENTS
 
-> **After this command completes**, review the plan in `agent-workspace/PLAN.md`. When ready to implement, run `/goat-implement` to continue with Phases 3–6.
+> **After this command completes**, review the plan in `agent-workspace/PLAN.md`. When ready to implement, run `/goat-team:goat` to execute the full pipeline (which will pick up the existing plan).
 
 ---
 
@@ -148,7 +148,7 @@ Workspace:           agent-workspace/
 ─────────────────────────────────────────────────
 
 Review the plan in agent-workspace/PLAN.md.
-When ready to proceed, run: /goat-implement
+When ready to proceed, run: /goat-team:goat
 ```
 
 **Do NOT proceed to implementation. Do NOT create IMPLEMENTATION-MANIFEST.md. Stop here and wait for human approval.**

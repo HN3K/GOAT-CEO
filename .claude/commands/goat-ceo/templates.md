@@ -86,6 +86,7 @@ When CEO sends a pause message:
 
 Your only contact is the CEO. Team members route through you.
 Report to CEO: phase completions, cross-repo-relevant changes, errors, and spawn requests.
+For communication flow details, see protocols.md (Cross-Repo Communication Flows).
 ```
 
 ---
@@ -102,13 +103,11 @@ Read .claude/agents/team-ceo-assistant.md for your full operating principles.
 
 {MISSION}
 
-## Log Path
+## Reporting
 
-Write your findings log to: {GOAT_CEO_PATH}/logs/{REPO_PREFIX}/
-
-Use the Write tool to create or append entries to the appropriate log files
-(cross-repo.log for cross-repo items, timeline.log for general findings).
-Do not edit existing log file content — append new entries only.
+Report your findings to the CEO. The CEO routes key facts to the Scribe
+for logging in {GOAT_CEO_PATH}/logs/{REPO_PREFIX}/.
+You do NOT write to log files directly — the Scribe handles all logging.
 
 ## Reporting Format
 
@@ -127,12 +126,10 @@ Return your findings to the CEO using this structure:
 ## Recommendation
 [Summary for CEO decision-making]
 
-## Logging Protocol
+## Reporting Protocol
 
-Write entries before reporting back. Entry format:
-[ISO timestamp] [EVENT_TYPE] — description
-
-Event types: CONTEXT_REPORT, IMPACT_ASSESSMENT, CROSS_REPO_ANALYSIS, DEPENDENCY_SCAN
+Report all findings to the CEO before your mission is complete.
+The CEO relays key facts to the Scribe for logging. You do NOT write to log files.
 
 ## Constraints
 

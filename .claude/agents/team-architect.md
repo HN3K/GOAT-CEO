@@ -41,3 +41,19 @@ Files: [specific files to create/modify]
 Acceptance: [observable outcome — what the verifier will check]
 Depends on: [prior task IDs if any]
 ```
+
+**Examples:**
+
+```
+Task: Add rate limiting middleware to API routes
+Files: src/middleware/rateLimiter.ts (create), src/routes/api.ts (modify)
+Acceptance: Rate limiter returns 429 after 100 req/min per IP; existing tests pass
+Depends on: none
+```
+
+```
+Task: Extract shared validation logic into a service
+Files: src/services/ValidationService.ts (create), src/controllers/UserController.ts (modify)
+Acceptance: All validation calls route through ValidationService; no duplicate validation logic remains
+Depends on: Task 1 (schema types must exist first)
+```

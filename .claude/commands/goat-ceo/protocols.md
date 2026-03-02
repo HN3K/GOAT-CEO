@@ -24,10 +24,11 @@
    - Searches for usages of the changed API/schema/contract
    - Identifies files, functions, or tests that reference the changed surface
    - Determines severity: breaking / non-breaking / no impact
-6. CEO-Assistant reports findings to CEO and logs assessment to `GOAT-CEO/logs/{affected-prefix}/cross-repo.log`.
-7. If no impact: CEO notes false alarm, takes no action. CEO logs to `cross-repo.log`.
-8. If impact confirmed: CEO routes information to the affected Overseer with full specifics.
-   CEO logs routing event to `cross-repo.log` for both repos.
+6. CEO-Assistant reports findings to CEO.
+7. CEO relays findings to the Scribe for logging in `GOAT-CEO/logs/{affected-prefix}/cross-repo.log`.
+8. If no impact: CEO notes false alarm, no further action.
+9. If impact confirmed: CEO routes information to the affected Overseer with full specifics.
+   CEO messages the Scribe to log the routing event in `cross-repo.log` for both repos.
 
 ---
 
@@ -59,7 +60,7 @@
    - Falls back to raw scanning (file structure, imports, config files) if tooling is absent.
    - Finds the requested information (API signature, schema definition, config value, etc.).
 4. CEO-Assistant reports findings to CEO.
-5. CEO-Assistant logs the exchange to `GOAT-CEO/logs/{target-prefix}/cross-repo.log`.
+5. CEO relays findings to the Scribe for logging in `GOAT-CEO/logs/{target-prefix}/cross-repo.log`.
 6. CEO relays the answer to the requesting Overseer.
 
 ---
@@ -81,7 +82,7 @@
 
 1. When the blocking repo catches up, CEO messages the paused Overseer: "Resume — [{other-repo}] has reached Phase {N}."
 2. Overseer proceeds: requests the next phase's team member spawns from CEO.
-3. CEO logs PAUSE and RESUME events to `logs/{prefix}/timeline.log`.
+3. CEO messages the Scribe to log PAUSE and RESUME events to `logs/{prefix}/timeline.log`.
 
 ---
 
@@ -107,7 +108,7 @@
 4. CEO presents the conflict to the user with full context from both CEO-Assistants.
 5. User decides: fix in source repo, fix in consumer repo, or replan both.
 6. CEO routes the decision to the relevant Overseers and resumes affected repos.
-7. CEO logs the conflict and resolution to `cross-repo.log` for both repos.
+7. CEO messages the Scribe to log the conflict and resolution to `cross-repo.log` for both repos.
 
 ---
 
@@ -135,7 +136,7 @@ Read agent-workspace/ to re-ground yourself before requesting any new spawns.
 ```
 
 4. New Overseer reads `agent-workspace/` to verify state and continues the pipeline from the checkpoint.
-5. CEO logs the failure and respawn to `logs/{prefix}/timeline.log` and `decisions.log`.
+5. CEO messages the Scribe to log the failure and respawn to `logs/{prefix}/timeline.log` and `decisions.log`.
 
 ---
 

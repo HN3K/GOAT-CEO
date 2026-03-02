@@ -19,14 +19,14 @@ system.
 |---|----------|------------|
 | A | Agent depth | Flat team — CEO spawns ALL agents. Overseers manage, don't spawn. Overseers message CEO to request new agents. |
 | B | CEO role | Informed executive — CEO-Assistant agents scout repo context via indexing/tooling. CEO makes decisions from their reports. |
-| C | Cross-repo comms | Message-only through CEO. No shared channel files. CEO-Assistants maintain logs in GOAT-CEO repo for audit. |
+| C | Cross-repo comms | Message-only through CEO. No shared channel files. CEO relays findings to Scribe for logging in GOAT-CEO repo. |
 | D | Sync strategy | Overseer-driven — Overseers track progress and report to CEO. CEO pauses dependent teams when needed, lets independent work continue. |
 | E | Message filtering | Overseers act as repo team leads. Team members route through Overseer. Direct-to-CEO messaging only for critical emergencies. |
 | F | Recovery | Respawn Overseer from artifacts. agent-workspace/ serves as checkpoint. |
 | G | Final review | Dedicated cross-repo reviewer agent with access to both repos simultaneously. |
 | H | Bootstrapping | Spec markdown files passed to repo. GOAT team's first task is to set up indexing/tooling, adapting to repo conventions. CEO does not implement directly. |
 | I | Git structure | All repos are separate git repositories. No concurrency concerns. |
-| J | Assessment-first | Overseers always orient and assess before requesting any agent spawns. For verification, investigation, diagnostic, or exploratory tasks, the Overseer handles them directly. The full pipeline is only activated when the assessment determines code changes are required. |
+| J | Assessment-first | **Key behavior:** Overseers always orient and assess before requesting any agent spawns. For verification, investigation, diagnostic, or exploratory tasks, the Overseer handles them directly. The full pipeline is only activated when the assessment determines code changes are required. This prevents unnecessary agent spawns for tasks that don't need the full pipeline. |
 
 ---
 
@@ -184,21 +184,18 @@ GOAT-CEO
 │   │   │   ├── Has access to ONE specific repo
 │   │   │   ├── Uses that repo's indexing/tooling system for context
 │   │   │   ├── Reports findings to CEO for decision-making
-│   │   │   └── Writes to log files in GOAT-CEO/logs/[repo-prefix]/ when active
+│   │   │   └── Does not write to logs — CEO relays findings to Scribe for logging
 │   │   │
 │   │   ├── Log files in GOAT-CEO/logs/[repo-prefix]/:
 │   │   │   ├── decisions.log — CEO decisions affecting this repo
 │   │   │   ├── cross-repo.log — cross-repo communications routed through CEO
 │   │   │   └── timeline.log — phase progression and key events
 │   │   │
-│   │   ├── Logging responsibility is SHARED:
-│   │   │   ├── CEO-Assistants write detailed entries when spawned (impact assessments,
-│   │   │   │   context reports, cross-repo analysis)
-│   │   │   ├── CEO writes routine entries directly (phase completions, pause/resume
-│   │   │   │   events, spawn/shutdown records) — no need to spawn a CEO-Assistant
-│   │   │   │   just to log a routine event
-│   │   │   └── This ensures continuous logging without requiring CEO-Assistants to
-│   │   │       be permanently running
+│   │   ├── Logging responsibility:
+│   │   │   ├── CEO sends brief event messages to the Scribe for logging
+│   │   │   ├── CEO-Assistants report findings to CEO; CEO relays key facts to Scribe
+│   │   │   ├── The Scribe writes all formatted log entries (see protocols.md, Scribe-Managed Logging)
+│   │   │   └── This keeps logging off the CEO's terminal and ensures consistent formatting
 │   │   │
 │   │   └── CEO-Assistants are spawned on-demand, not permanently running
 │   │
@@ -242,7 +239,7 @@ GOAT-CEO
 │   │   │   │   │   to determine if the change truly impacts that repo
 │   │   │   │   ├── If impact confirmed: CEO-Assistant reports specifics to CEO
 │   │   │   │   └── If no impact: CEO-Assistant reports false alarm, CEO takes no action
-│   │   │   ├── CEO-Assistant logs the assessment in GOAT-CEO/logs/
+│   │   │   ├── CEO relays assessment to Scribe for logging in GOAT-CEO/logs/
 │   │   │   └── If impact confirmed: CEO routes the information to affected Overseer
 │   │   │
 │   │   ├── INBOUND (repo receives cross-repo information):
@@ -263,7 +260,7 @@ GOAT-CEO
 │   │   │   ├── CEO-Assistant queries target repo's indexes/code
 │   │   │   ├── CEO-Assistant reports findings to CEO
 │   │   │   ├── CEO relays answer to requesting Overseer
-│   │   │   └── CEO-Assistant logs the exchange in GOAT-CEO/logs/
+│   │   │   └── CEO relays exchange to Scribe for logging in GOAT-CEO/logs/
 │   │   │
 │   │   └── PAUSE/RESUME (CEO-driven dependency management):
 │   │       ├── Overseers report phase completions to CEO
@@ -403,7 +400,7 @@ GOAT-CEO
     │   ├── Role: Context scout for CEO decision-making
     │   ├── Access: ONE specific repo's indexing/tooling system
     │   ├── Reports: findings to CEO (API surfaces, contracts, impact assessments)
-    │   ├── Findings relayed to Scribe for logging (CEO-Assistants do not write to logs directly)
+    │   ├── Does NOT: write to log files — CEO relays findings to Scribe for logging
     │   └── Does NOT: make decisions, communicate with Overseers, or modify code
     │
     ├── Repo Overseer (one per repo, long-running)
@@ -524,9 +521,13 @@ Pausing means "don't advance phases," not "freeze all running work."
 GOAT-CEO/
 ├── GOAT-CEO-DESIGN.md          ← this document
 ├── .claude/
+│   ├── agents/                 ← custom agent type definitions
 │   └── commands/
-│       └── goat-ceo.md         ← the skill definition (to be created)
-├── logs/                       ← created per session, maintained by CEO and CEO-Assistants
+│       ├── goat-ceo/           ← CEO orchestration skill
+│       │   ├── protocols.md    ← communication flows and error recovery
+│       │   └── templates.md    ← agent spawn prompt templates
+│       └── goat-team/          ← GOAT pipeline skill files
+├── logs/                       ← created per session, maintained by Scribe
 │   ├── [repo-prefix]/
 │   │   ├── decisions.log       ← CEO decisions affecting this repo
 │   │   ├── cross-repo.log     ← cross-repo communications

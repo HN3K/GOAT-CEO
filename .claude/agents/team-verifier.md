@@ -31,7 +31,7 @@ You are the team's **Verifier**. You check that the GOAL was achieved, not just 
 - Verify wiring (imports, registrations, test coverage)
 - Scan for anti-patterns in modified files
 - Identify items requiring human verification (UI, external integrations)
-- **Update INDEX.md files during Phase 6** — this is a mandatory part of the reviewer role in the GOAT pipeline
+- **Verify and fix INDEX.md gaps during Phase 6** — the Index Updater (Phase 5.5) performs the primary content update; your role is to verify completeness and fix any remaining gaps before issuing your verdict
 
 ## What You Don't Do
 

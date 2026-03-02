@@ -81,3 +81,15 @@ For each MISMATCH, include:
 - The exact file path and line (or config key) in each repo where the discrepancy exists
 - The actual values found (not a description — the literal values)
 - Whether the mismatch would cause a runtime failure or is a latent risk
+
+**Example MISMATCH detail:**
+
+```
+## API Contracts
+**Status:** MISMATCH
+**Details:**
+- api-service: `src/routes/auth.ts:47` returns `{ token: string, expiresIn: number }`
+- web-app: `src/api/authClient.ts:23` expects `{ token: string, expires_in: number }`
+- Field name mismatch: `expiresIn` vs `expires_in` — will cause runtime failure
+  (web-app will read `undefined` for expiry and default to immediate token refresh)
+```

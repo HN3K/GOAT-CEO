@@ -113,11 +113,13 @@ PASS / FAIL
 
 ---
 
-## Phase 6 — Index Update (Mandatory Before Verdict)
+## Index Verification & Gap Coverage (Mandatory Before Verdict)
+
+> **Phase 5.5** (Index Updater — see `index-updater.md`) performs the comprehensive content update pass across all modified files. Your job here in **Phase 6** is to verify that the Index Updater's work is complete and correct, fix any remaining gaps, and ensure a clean index state before issuing your verdict.
 
 Do not issue your verdict until indexes are clean. This is not optional.
 
-**CRITICAL: The `check --all` tool detects staleness by file timestamps, NOT by content accuracy. A `stale=0` result does NOT mean the indexes are correct. You must verify and update index content yourself for every file modified in this implementation.**
+**CRITICAL: The `check --all` tool detects staleness by file timestamps, NOT by content accuracy. A `stale=0` result does NOT mean the indexes are correct. You must verify index content yourself for every file modified in this implementation and fix any gaps the Index Updater missed.**
 
 **Step 1 — Identify all stale and missing indexes:**
 From your `check --all` output, collect every entry where `status` is `"stale"` or `"missing"`.
