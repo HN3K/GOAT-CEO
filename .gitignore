@@ -1,0 +1,8 @@
+# GOAT pipeline artifacts (per-session, not committed)
+agent-workspace/
+
+# Session logs (per-session, not committed)
+logs/
+
+# Previous run archives
+agent-workspace/_previous/
