@@ -28,8 +28,8 @@ The `codebase-index-tools` is a local CLI suite that operates on a `Codebase-Ind
 ### Language Choice
 
 Two reference implementations exist:
-- **Python** (stdlib-only, Python 3.8+) — used in JarvisVibeGraph. Invocation: `python -m codebase_index_tools`
-- **Node.js** (minimist + minimatch only, Node 18+) — used in KH-UI-AI. Invocation: `node codebase-index-tools/cli.js`
+- **Python** (stdlib-only, Python 3.8+) — recommended default. Invocation: `python -m codebase_index_tools`
+- **Node.js** (minimist + minimatch only, Node 18+) — alternative for Node-only environments. Invocation: `node codebase-index-tools/cli.js`
 
 Choose based on the target repo's primary language and toolchain. Both implementations are functionally identical.
 
