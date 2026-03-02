@@ -229,7 +229,9 @@ jvg — CSharpNormalizer ──────────────────�
 - `█` = phase complete
 - `▓` = phase active
 - `░` = phase pending
-- 8 segments representing phases 0–7. Assessment-only repos use a single `▓`.
+- 8 segments representing phases 0–7.
+- **Completed repos** (whether via full pipeline or Phase 0 resolution) show a full bar: `████████`
+- Assessment-only repos in progress use a single `▓`.
 
 **Progress line:** Indented 2 spaces. Format: `{bar}  {N}/7 {phase-name} ({status}) | {activity} | Agents: {list}`.
 - Status values: `running`, `paused`, `blocked`, `done`
@@ -245,10 +247,13 @@ jvg — CSharpNormalizer ──────────────────�
   - In-progress: `I1 in progress...`
   - Single iteration with no issues: `0 found — clean`
 - **Assessment** — Phase 0 single line: `Assessment (done) — {result}`
+- **CEO Decision** — When the CEO makes a routing decision (e.g., direct fix instead of full pipeline, pipeline activation, loop exit), display it prominently on the progress line or as a detail tree entry prefixed with `CEO Decision:`. This ensures users understand why a repo took an unusual path (e.g., skipping the pipeline). Format: `CEO Decision: {action} ({rationale})`
+  - Examples: `CEO Decision: Direct fix (pipeline skipped, narrow scope)`, `CEO Decision: Pipeline activated (new subsystem, 37 test cases)`, `CEO Decision: LOOP_EXIT after clean verification`
 - **Files changed** — count of modified files (shown for repos past implementation)
 - **Commit** — hash (shown for completed repos that committed)
+- **TASK COMPLETED** — final line in the detail tree for any repo whose work is finished. Signals clearly that no further work is pending for this repo. Always use `└── TASK COMPLETED` as the last tree entry.
 
-**Omit what doesn't apply.** A repo in Phase 2 has no Impl or Review. A Phase 0 repo shows only the assessment line. Only display what exists.
+**Omit what doesn't apply.** A repo in Phase 2 has no Impl or Review. A Phase 0 repo shows only the assessment line. Only display what exists. When a repo is complete, always show the full progress bar (`████████`) and end with `└── TASK COMPLETED`.
 
 **Cross-Repo section:** Only shown when related groups exist. Uses the same thin-line title. Omit for isolated-only sessions.
 
