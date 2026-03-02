@@ -137,17 +137,16 @@ Do NOT proceed to Step 3 until the user explicitly confirms they are ready to be
 
 Read `.claude/commands/goat-ceo/templates.md` — use the **Overseer template** (Section 1) for spawning Overseers.
 
-### 3.1 — Create Team and Tasks
+### 3.1 — Create Team, Scribe, and Tasks
 
 - `TeamCreate` with `team_name: "goat-ceo"` and a description summarizing all repos and tasks.
-- `TaskCreate` for each repo's pipeline (7 phases each). Use `addBlockedBy` where phase ordering applies.
 - Create log directories for each repo using the Write tool (create placeholder files to establish paths):
   - `logs/{repo-prefix}/decisions.log`
   - `logs/{repo-prefix}/cross-repo.log`
   - `logs/{repo-prefix}/timeline.log`
-
-Write initial log entry to each `timeline.log`:
-`[ISO timestamp] AGENT_SPAWN — Session started. Repos: {list}. Tasks assigned.`
+- **Spawn the Scribe first** (before any other agents): `name: "ceo-scribe"`, `subagent_type: team-ceo-scribe`, `team_name: "goat-ceo"`, `run_in_background: true`. Fill the Scribe template (Section 11) with `{GOAT_CEO_PATH}` and `{REPO_LIST}`.
+- Message the Scribe: `"Session started. Repos: {list}. Tasks: {summary per repo}."`
+- `TaskCreate` for each repo's pipeline (7 phases each). Use `addBlockedBy` where phase ordering applies.
 
 ### 3.2 — Spawn Overseers
 
@@ -189,9 +188,16 @@ For isolated repos: the Overseer's spawn prompt contains NO information about ot
 
 Read `.claude/commands/goat-ceo/protocols.md` — use the **Cross-Repo Communication Flows** and **Error Recovery** sections throughout this step.
 
-### 4.1 — Parallel Execution
+### 4.1 — Parallel Execution & Assessment-First Protocol
 
-All repo pipelines run simultaneously. Each Overseer independently manages its 7 phases. Isolated repos run without any cross-repo interaction. Related repos run independently with Overseer-driven reporting to CEO.
+All repo pipelines run simultaneously. Each Overseer independently manages its pipeline. Isolated repos run without any cross-repo interaction. Related repos run independently with Overseer-driven reporting to CEO.
+
+**Assessment-First (Phase 0):** Every Overseer performs an independent assessment before requesting any agent spawns. The Overseer reads code, runs tests, queries APIs, and evaluates the task. Two outcomes are possible:
+
+- **Phase 0 resolution:** The task is verification, investigation, or diagnostic — the Overseer completes it directly and reports findings to CEO. No pipeline agents are spawned. CEO marks the task complete.
+- **Pipeline activation:** The task requires code changes — the Overseer proceeds to Phase 1 and begins requesting agent spawns per the normal pipeline.
+
+The CEO must handle both paths. An Overseer reporting "task complete" without ever requesting agents is normal Phase 0 behavior, not an error.
 
 ### 4.2 — Cross-Repo Communication
 
@@ -212,13 +218,17 @@ Follow the flows defined in `protocols.md`:
 
 ### 4.4 — Progress Dashboard
 
-Refer to the dashboard format in `protocols.md` (Progress Dashboard section). Update after each:
+Refer to the dashboard format in `protocols.md` (Progress Dashboard section). The dashboard is the user's primary view — display it after each:
 - Phase completion reported by an Overseer
 - Cross-repo event (OUTBOUND/INBOUND/REQUEST)
 - PAUSE or RESUME
 - Error or escalation
 
-Proactively report to user: phase completions, cross-repo impacts, pauses/resumes, errors requiring input.
+**Display rules:**
+- Show the session dashboard and CEO decisions only. Suppress verbose log output.
+- Dashboard is sectioned per repo — each repo's phase, agents, research issues, and progress visible at a glance.
+- Track research issues per iteration: issues found (by severity), issues resolved, clean verification passes.
+- For 3+ repos, use compact mode (summary table) with expanded detail only for repos with notable activity.
 
 ### 4.5 — Error Handling
 
@@ -235,18 +245,25 @@ When Overseer requests a team member:
 2. Fill placeholders: `{REPO_PATH}`, `{REPO_PREFIX}`, `{TASK_DESCRIPTION}`, `{BATCH_ASSIGNMENT}` or `{ITERATION_N}`.
 3. Spawn and confirm to Overseer per Section 3.3 protocol.
 
-### 4.7 — CEO Direct Logging
+### 4.7 — Logging via Scribe
 
-Write routine entries directly using the Write tool (no CEO-Assistant needed for routine events):
+All logging is routed through the Scribe agent. The CEO does NOT write log entries directly — instead, send a brief message to `ceo-scribe` describing what happened. The Scribe formats and writes the entry to the correct log file.
 
-```
-[YYYY-MM-DDTHH:MM:SSZ] [EVENT_TYPE] — description
-```
+**Message the Scribe after each:**
+- Agent spawn or shutdown
+- Phase completion
+- Pause or resume
+- Decision made
+- Cross-repo routing event
+- Error or escalation
 
-Event types and target files (see `protocols.md` Logging Format section for full reference):
-- `PHASE_COMPLETE`, `AGENT_SPAWN`, `AGENT_SHUTDOWN`, `PAUSE`, `RESUME`, `ERROR` → `logs/{prefix}/timeline.log`
-- `DECISION` → `logs/{prefix}/decisions.log`
-- `CROSS_REPO_ROUTE` → `logs/{prefix}/cross-repo.log` (for both source and destination repos)
+**Example messages to Scribe:**
+- `"Spawned kh-implementer-1 for Phase 5, Batch 1."`
+- `"kh Phase 6 complete. Reviewer A: PASS, Reviewer B: PASS."`
+- `"Decision for jvg: LOOP_EXIT after clean verification. Proceeding to manifest."`
+- `"Cross-repo: api auth endpoint change routed to web overseer. Severity: major."`
+
+The Scribe confirms each entry with a minimal response. This keeps logging off the CEO's terminal while maintaining comprehensive audit trails.
 
 ---
 
@@ -296,10 +313,11 @@ Output a summary to the user:
 
 ### 5.4 — Cleanup
 
-1. Shut down any remaining agents via `SendMessage shutdown_request`.
-2. `TeamDelete "goat-ceo"`.
-3. Preserve `agent-workspace/` in each repo (per-repo GOAT artifacts — do not delete).
-4. Preserve `GOAT-CEO/logs/` (cross-repo audit trail — do not delete).
+1. Message Scribe: `"Session ending. All repos complete. {summary}."`
+2. Shut down all remaining agents via `SendMessage shutdown_request` (shut down Scribe last — it needs to log the final entries).
+3. `TeamDelete "goat-ceo"`.
+4. Preserve `agent-workspace/` in each repo (per-repo GOAT artifacts — do not delete).
+5. Preserve `GOAT-CEO/logs/` (cross-repo audit trail — do not delete).
 
 ---
 
@@ -307,6 +325,7 @@ Output a summary to the user:
 
 | Role | subagent_type | Model | Naming Convention | Notes |
 |------|--------------|-------|-------------------|-------|
+| Scribe | `team-ceo-scribe` | haiku | `ceo-scribe` | 1 per session, persistent, logging only |
 | Repo Overseer | `team-overseer` | opus | `{prefix}-overseer` | 1 per repo, long-running pipeline manager |
 | CEO-Assistant | `team-ceo-assistant` | opus | `ceo-assistant-{prefix}` | On-demand context scout; no Edit tool |
 | Cross-Repo Reviewer | `team-cross-reviewer` | sonnet | `cross-reviewer-{group}` | 1 per related group, spawned at finalization |
@@ -318,7 +337,8 @@ Output a summary to the user:
 | Reviewer A | `team-verifier` | sonnet | `{prefix}-reviewer-a` | Phase 6, simultaneous with Reviewer B |
 | Reviewer B | `team-verifier` | sonnet | `{prefix}-reviewer-b` | Phase 6, simultaneous with Reviewer A |
 
-**Agent naming examples** (kh = KH-UI-AI, jvg = JarvisVibeGraph):
-- `kh-overseer`, `kh-planner`, `kh-researcher-codebase`, `kh-implementer-1`, `kh-reviewer-a`
-- `jvg-overseer`, `jvg-planner`, `jvg-researcher-technical`, `jvg-implementer-2`, `jvg-reviewer-b`
-- `ceo-assistant-kh`, `ceo-assistant-jvg`, `cross-reviewer-kh-jvg`
+**Agent naming examples** (api = my-api-service, web = my-web-app):
+- `ceo-scribe` (one per session)
+- `api-overseer`, `api-planner`, `api-researcher-codebase`, `api-implementer-1`, `api-reviewer-a`
+- `web-overseer`, `web-planner`, `web-researcher-technical`, `web-implementer-2`, `web-reviewer-b`
+- `ceo-assistant-api`, `ceo-assistant-web`, `cross-reviewer-api-web`
