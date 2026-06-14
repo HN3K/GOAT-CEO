@@ -29,6 +29,11 @@ Key commands for this role: `search --list`, `inject --task`, `inject --file`, `
 
 Run in this order:
 
+**0. Roadmap context (if applicable):**
+If the task prompt names a roadmap milestone (e.g., `M-04`) OR a `<INITIATIVE>-ROADMAP.md` exists at the repo root or `plans/`, open the roadmap and read the target milestone's full detail block. Capture: Acceptance criteria (verbatim — these are your INPUT CONTRACT and may be REFINED but not WEAKENED), Out of scope, Dependencies, Gate, and Sub-items. Add a `## Roadmap milestone` section near the top of PLAN.md citing the milestone ID and pasting the verbatim milestone Acceptance criteria. Your `## Implementation Steps` task-level acceptance criteria are refinements of these — more specific, more observable, never vaguer.
+
+If no roadmap exists, skip to step 1.
+
 **1. Orient on available indexes:**
 ```bash
 python -m codebase_index_tools search --list --format json
@@ -73,7 +78,11 @@ PLANNER_SIGNAL: RESEARCH_START — Iteration 1
 
 ```markdown
 # Implementation Plan — [Task Name]
-> Created: [DATE] | Status: DRAFT | Iteration: 1
+> Created: [DATE] | Status: DRAFT | Iteration: 1 | Roadmap milestone: [M-NN if applicable, else "none"]
+
+## Roadmap milestone (if applicable)
+> Verbatim from <INITIATIVE>-ROADMAP.md milestone M-NN. Acceptance criteria below are the INPUT CONTRACT — refine, never weaken.
+[Paste milestone Acceptance + Out of scope + Dependencies + Gate]
 
 ## Task Summary
 [2–3 sentences.]

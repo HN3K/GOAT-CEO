@@ -1,9 +1,12 @@
-# GOAT pipeline artifacts (per-session, not committed)
+# Per-session GOAT pipeline artifacts (resume anchor, gates, status, logs)
 agent-workspace/
+logs/
 
-# Session logs (per-session, not committed)
-logs/*
-!logs/.gitkeep
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
 
-# Previous run archives
-agent-workspace/_previous/
+# Local-only state — each user generates their own
+repo-registry.json
+.claude/agent-memory/

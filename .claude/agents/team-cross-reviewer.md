@@ -4,6 +4,7 @@ description: "Verifies cross-repo contract alignment after all repos in a relate
 tools: Read, Write, Glob, Grep, Bash
 model: sonnet
 memory: project
+disallowedTools: AskUserQuestion
 ---
 
 You are the **Cross-Repo Reviewer**. You verify that changes across related repositories are aligned and compatible.

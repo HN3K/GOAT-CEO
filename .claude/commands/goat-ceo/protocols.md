@@ -1,363 +1,404 @@
 # GOAT-CEO Protocols Reference
-> Read by the CEO during Step 4 (Execution & Monitoring) for communication flows and error recovery.
+> Read by the CEO on-demand during execution: cross-repo routing, phase-gate transitions, clean-shutdown, recovery. All primitives used here are from `GOAT-CEO-REWORK-DESIGN.md §0` — do not invent beyond that list.
 
 ---
 
-## Cross-Repo Communication Flows
+## Part 0 — Session Setup (first CEO actions every wave)
 
-### Routing Tiers
+> **Intake prerequisite (Rule #8 — non-skippable):** Before any step below runs, the CEO MUST have completed `goat-ceo.md` Steps 1 and 2 in full: repo list confirmed with the operator (including any `ro-reference` repos), Step 1.2 prerequisite/index check run for EVERY active `rw` repo, INDEX-AVAILABLE or INDEX-UNAVAILABLE recorded in `repo-registry.json`. The steps below are the AUTONOMOUS phase that follows confirmed intake — do not start them based on a directive goal alone.
+>
+> **Read-only reference repos (Rule #8):** Repos with `access: "ro-reference"` in `repo-registry.json` are ground-truth sources. Agents may READ them (Read/Grep/Glob tool calls, cite file:line). Agents are FORBIDDEN from writing to them — no Write, Edit, Bash mutation, or git operation targeting a reference repo path. The destructive-DB deny rules and git-commit guards already block most mutations; this briefing makes the intent explicit for any operation those hooks do not cover.
 
-Cross-repo messages are classified into two tiers before routing:
+**Step 1 — Create the team.** The CEO's first action is `TeamCreate` with a session-scoped name (`goat-ceo-YYYYMMDD-HHMM`). Config lives at `~/.claude/teams/{name}/config.json`. The CEO becomes the fixed lead. All Overseers will become teammates of this team.
 
-**Tier 1 — Informational (lightweight):**
-The change is non-breaking and informational. CEO relays the message directly to the affected Overseer without spawning a CEO-Assistant. Examples: API additions (not changes), new endpoints, configuration additions, progress updates relevant to a dependent repo.
+**Step 2 — Spawn Overseers as background teammates.** For each repo in the wave, spawn the `team-overseer` agent with `run_in_background: true` so the CEO turn does not block while Overseers initialize. Assign each Overseer a task via `TaskCreate` with its repo name as the task name and the Overseer's name as the owner. The shared task list IS the live cross-repo pipeline dashboard.
 
-**Tier 2 — Decision-Required (full assessment):**
-The change may be breaking or requires CEO decision. CEO spawns a CEO-Assistant to assess actual impact before routing. Examples: API signature changes, schema modifications, removed endpoints, behavioral changes, dependency version bumps.
+**Step 3 — Write `agent-workspace/MISSION.md`, `agent-workspace/PHASE-GATES.json`, and `agent-workspace/EXPECTED-GATES.txt`.** MISSION.md holds the goal, wave scope, and open questions. PHASE-GATES.json maps each role to the sentinel file it requires before it may Write/Edit/Bash (flat top-level object, no "roles" wrapper). EXPECTED-GATES.txt activates the `check_pipeline_complete.py` Stop hook — without it the hook fails open and never blocks session end. Write one sentinel filename per line:
+```
+PLAN.GATE
+RESEARCH.GATE
+IMPLEMENT.GATE
+INDEX.GATE
+REVIEW.GATE
+```
+All three files must exist before any Overseer starts Phase 1.
 
-**Tier determination:** The CEO classifies each OUTBOUND flag from an Overseer. If the Overseer's assessment says "non-breaking" AND the change is additive (not modifying or removing existing surfaces), it is Tier 1. Everything else is Tier 2.
+**Step 4 — Workflow ID awareness.** If a Workflow script is used to drive the pipeline, record its ID in MISSION.md immediately after launch. Workflows resume only within the same session — if the session ends with a Workflow in flight, the next session must restart it from the last completed phase (not resume mid-script). The prose fallback state-machine in `goat-ceo.md §4.B` is the recovery path.
 
-### OUTBOUND — Change That May Affect Another Repo
-
-**Trigger:** Overseer determines a completed change touches a shared contract, API, schema, or interface.
-
-**Step-by-step routing:**
-
-1. Team member completes work and reports to its Overseer.
-2. Overseer assesses: does this change touch an API, schema, config, or shared interface?
-   - Overseer errs on the side of flagging — when in doubt, flag it.
-   - Overseer does NOT assess actual impact — that is the CEO-Assistant's job.
-3. If flagged, Overseer messages CEO with:
-   - What changed (old → new, specific files/functions/endpoints)
-   - Why it changed (task context)
-   - Overseer's preliminary assessment: potentially breaking / likely non-breaking
-3.5. CEO determines routing tier:
-   - **Tier 1 (informational):** Skip to step 9 — relay the Overseer's message directly to the affected Overseer. Log via Scribe.
-   - **Tier 2 (decision-required):** Continue to step 4 for full CEO-Assistant assessment.
-4. CEO spawns or resumes a CEO-Assistant (`ceo-assistant-{affected-prefix}`) targeting the AFFECTED repo.
-5. CEO-Assistant queries the affected repo's indexing/tooling to assess actual impact:
-   - Searches for usages of the changed API/schema/contract
-   - Identifies files, functions, or tests that reference the changed surface
-   - Determines severity: breaking / non-breaking / no impact
-6. CEO-Assistant reports findings to CEO.
-7. CEO relays findings to the Scribe for logging in `GOAT-CEO/logs/{affected-prefix}/cross-repo.log`.
-8. If no impact: CEO notes false alarm, no further action.
-9. If impact confirmed: CEO routes information to the affected Overseer with full specifics.
-   CEO messages the Scribe to log the routing event in `cross-repo.log` for both repos.
+**Step 5 — Concurrency cap.** The platform supports a maximum of 16 concurrent agents per Workflow phase and 1000 total agents per session. Size phases accordingly: ≤16 parallel implementers or reviewers per phase; batch larger sweeps.
 
 ---
 
-### INBOUND — Receiving Cross-Repo Information
+## Part 1 — Cross-Repo Communication Flows
+
+### Tier Classification (classify before routing every OUTBOUND flag)
+
+**Tier 1 — Informational:**
+The change is additive and non-breaking. The affected repo needs to know but no code change is required on its side. CEO relays directly to the affected Overseer via `SendMessage`. No CEO-Assistant spawn needed.
+- Examples: new API endpoints (not modified), new config keys added (not renamed), progress updates, new optional parameters.
+
+**Tier 2 — Breaking (requires CEO-Assistant assessment):**
+The change may break a consuming repo. CEO spawns or resumes a `team-ceo-assistant` against the AFFECTED repo's actual files before routing.
+- Examples: API signature changes, schema column renames/drops, removed endpoints, behavioral changes, dependency version bumps.
+
+**Classification rule:** If the Overseer's flag says "non-breaking" AND the change is strictly additive (nothing removed, nothing renamed, nothing changed), → Tier 1. Otherwise → Tier 2. The CEO errs toward Tier 2 on ambiguity. The CEO-Assistant is cheap; a missed breaking change is not.
+
+**Session topology check:** Agent teams are single-session, single-cwd. Overseer-to-Overseer `SendMessage` works only if both Overseers share the same session. If repos are in independent sessions, ALL inter-repo communication goes through the CEO — it reads one session's STATUS.md and relays to the other. Validate session topology before relying on peer-relay.
+
+---
+
+### OUTBOUND — A Change in Repo A That May Affect Repo B
+
+**Trigger:** Overseer for Repo A reports a completed change that touches a shared contract, API, schema, or interface.
+
+1. Overseer reports to CEO: what changed (old → new, specific `file:line`), why it changed (task context), preliminary flag: "potentially breaking" or "likely non-breaking". Overseer errs on the side of flagging — impact assessment is the CEO-Assistant's job, not the Overseer's.
+
+2. CEO classifies the tier.
+
+3. **Tier 1 path:** CEO sends a `SendMessage` to the affected Overseer with the full change description. CEO writes a one-liner to `logs/<affected-prefix>/cross-repo.log`: `[ISO_TIMESTAMP] TIER1_RELAY — <what changed> from <source-prefix>`. Done.
+
+4. **Tier 2 path:** CEO spawns `team-ceo-assistant` named `ceo-assistant-<affected-prefix>`, targeting `<affected-repo-path>`. Spawn with `permissionMode: plan` (read-only scout — HARD, not advisory). The CEO-Assistant's mission is: "Read the actual files in this repo. Find all usages of `<changed surface>`. Determine severity: CONFIRMED_BREAKING / NO_IMPACT / UNCLEAR. Cite `file:line` for every reference you find. Return a structured JSON block: `{\"verdict\": \"...\", \"severity\": \"...\", \"affected_files\": [...], \"evidence\": [...]}`. Do NOT propose fixes."
+
+5. CEO-Assistant returns the JSON block. CEO reads it.
+   - `NO_IMPACT` → log as false alarm. No routing. Done.
+   - `CONFIRMED_BREAKING` or `UNCLEAR` → proceed to step 6.
+
+6. CEO writes to `logs/<affected-prefix>/cross-repo.log`: `[ISO_TIMESTAMP] TIER2_ASSESSMENT — <verdict>/<severity> — <affected-prefix> impact from <source-prefix>. Files: <list>`.
+
+7. CEO routes to the affected Overseer via `SendMessage`: "Cross-repo change from `<source-prefix>`: `<what changed>`. CEO-Assistant verdict: `<CONFIRMED_BREAKING|UNCLEAR>`. Severity: `<severity>`. Affected files in your repo: `<list with file:line>`. You must address this before your Phase 5 gate closes."
+
+8. If the affected Overseer is mid-implementation, CEO classifies: rework-now vs. address-in-review. Default = address-in-review (less disruption). CEO escalates to operator only if the conflict cannot be deferred.
+
+---
+
+### INBOUND — Receiving a Cross-Repo Notification in Repo B
 
 **Trigger:** CEO sends an Overseer information about a change in a related repo.
 
-**Phase-aware handling rules:**
+- **Planning or Research phase:** Overseer instructs the active architect or researcher to incorporate the new information. Update PLAN.md or RESEARCH-LOG.md. Flag the change as an external input. No escalation needed unless scope changes materially.
 
-- **Planning or Research phase:** Overseer instructs the active agent to incorporate the new information into the plan or research findings. Adjust scope if needed.
-- **Implementation phase:**
-  - If the change is non-breaking or easily absorbed: Overseer adjusts the current or next batch in-flight. No escalation needed.
-  - If the change requires rework or conflicts with the current implementation batch: Overseer escalates to CEO with specifics (what conflicts, what rework is needed). CEO decides: pause and replan, or continue and address in review.
-- **Review phase:** Overseer adds the cross-repo change as an additional review criterion for the active reviewers.
+- **Implementation phase (non-breaking or easily absorbed):** Overseer adjusts the current or next implementer batch scope. No escalation needed.
 
----
+- **Implementation phase (requires rework or conflicts with in-flight batch):** Overseer escalates to CEO: what conflicts, what batch is affected, what rework is required. CEO decides: (a) pause the implementer batch, (b) let the batch complete and address in review, (c) replan. CEO relays the decision back to the Overseer. CEO writes to `decisions.log`.
 
-### REQUEST — Asking for Information From Another Repo
-
-**Trigger:** Overseer needs specific information from a related repo to proceed.
-
-**Step-by-step routing:**
-
-1. Overseer messages CEO: "Need [specific info] from [other-repo-prefix]."
-   - Include: what information is needed, why it is needed, how urgent it is.
-2. CEO spawns or resumes a CEO-Assistant (`ceo-assistant-{target-prefix}`) targeting the target repo.
-3. CEO-Assistant queries the target repo:
-   - Uses the repo's indexing/tooling system when available.
-   - Falls back to raw scanning (file structure, imports, config files) if tooling is absent.
-   - Finds the requested information (API signature, schema definition, config value, etc.).
-4. CEO-Assistant reports findings to CEO.
-5. CEO relays findings to the Scribe for logging in `GOAT-CEO/logs/{target-prefix}/cross-repo.log`.
-6. CEO relays the answer to the requesting Overseer.
+- **Review phase:** Overseer adds the cross-repo change as an explicit additional review criterion for both reviewers (Reviewer A and B). Criterion: "Verify that `<changed surface>` integration from `<source-prefix>` is handled correctly."
 
 ---
 
-### PAUSE/RESUME — CEO-Driven Dependency Management
+### REQUEST — Repo A Needs Information From Repo B
 
-**Trigger:** CEO determines one repo is ahead of a dependent repo and must wait.
+**Trigger:** Overseer needs specific information from another repo to proceed (API signature, schema shape, config value, etc.).
 
-**Pause semantics (Design Note 5):**
+1. Overseer messages CEO: "Need `<specific info>` from `<target-prefix>`. Reason: `<why>`. Urgency: `<blocking|non-blocking>`."
 
-1. CEO messages the ahead Overseer: "Pause — waiting for [{other-repo}] to reach Phase {N}."
-2. Upon receiving pause:
-   - **Running team members finish their current work** — they complete the current task and report back to the Overseer as normal.
-   - **Overseer does not request new team member spawns** — it holds at the current phase boundary.
-   - **Overseer remains responsive** — it processes messages from running team members and from CEO.
-3. Overseer acknowledges pause to CEO.
+2. CEO spawns `team-ceo-assistant` named `ceo-assistant-<target-prefix>` with `permissionMode: plan`. Mission: "Find `<specific info>` in this repo. Use `codebase-index-tools search` and `inject` first. Fall back to direct file reads. Cite `file:line`. Return the information in a structured block." CEO-Assistant does NOT speculate — if the information is absent or ambiguous, it returns `{"found": false, "note": "..."}`.
+
+3. CEO receives the result. CEO relays to the requesting Overseer via `SendMessage`. CEO writes to `cross-repo.log`: `[ISO_TIMESTAMP] REQUEST_FULFILLED — <target-prefix> → <requesting-prefix>: <summary>`.
+
+4. If the CEO-Assistant returned `found: false`, CEO tells the Overseer: "Information not available in `<target-prefix>` at this time. Options: (a) proceed with stated assumption documented in PLAN.md, (b) escalate to operator."
+
+---
+
+### PAUSE / RESUME — Dependency Management
+
+**Trigger:** CEO determines one repo is ahead of a dependency and must wait.
+
+**Pause:**
+1. CEO sends `SendMessage` to the ahead Overseer: "PAUSE — waiting for `<other-prefix>` to reach Phase `<N>`. Continue your current unit to completion. Do not start the next phase."
+2. Running agents finish their current bounded unit and report back normally. The Overseer does not spawn the next batch.
+3. Overseer acknowledges PAUSE to CEO. CEO writes to `logs/<prefix>/timeline.log`: `[ISO_TIMESTAMP] PAUSE — <prefix> paused pending <other-prefix> Phase <N>`.
 
 **Resume:**
-
-1. When the blocking repo catches up, CEO messages the paused Overseer: "Resume — [{other-repo}] has reached Phase {N}."
-2. Overseer proceeds: requests the next phase's team member spawns from CEO.
-3. CEO messages the Scribe to log PAUSE and RESUME events to `logs/{prefix}/timeline.log`.
-
----
-
-## Error Recovery
-
-### Repo-Local Errors (Test failures, Review failures)
-
-- Handled by the Overseer per standard GOAT protocol.
-- Overseer coordinates re-runs, iteration loops, or rollback within the repo.
-- CEO is not involved unless the Overseer explicitly escalates.
-- Escalation format: Overseer messages CEO with what failed, what was tried, and what decision is needed.
+1. When the blocking repo reaches the required phase, CEO sends `SendMessage` to the paused Overseer: "RESUME — `<other-prefix>` has reached Phase `<N>`. Proceed to Phase `<M>`."
+2. Overseer proceeds to spawn the next phase's agents.
+3. CEO writes to `logs/<prefix>/timeline.log`: `[ISO_TIMESTAMP] RESUME — <prefix> resumed after <other-prefix> Phase <N> complete`.
 
 ---
 
-### Cross-Repo Errors (Breaking change, Contract violation)
+## Part 2 — Phase Gate Protocol
 
-1. CEO detects the conflict (via OUTBOUND flow or Overseer escalation).
-2. CEO pauses both affected repos using the PAUSE/RESUME protocol.
-3. CEO spawns CEO-Assistants for both repos to gather full context:
-   - What the change is and where it lives
-   - What the consuming repo relies on and how it is broken
-   - What fix options exist (change source, update consumer, negotiate interface)
-4. CEO presents the conflict to the user with full context from both CEO-Assistants.
-5. User decides: fix in source repo, fix in consumer repo, or replan both.
-6. CEO routes the decision to the relevant Overseers and resumes affected repos.
-7. CEO messages the Scribe to log the conflict and resolution to `cross-repo.log` for both repos.
+### Gate Sentinels
 
----
-
-### Overseer Failure (Crash, Context exhaustion)
-
-**Detection:** CEO determines an Overseer is unresponsive after a reasonable wait.
-
-**Recovery steps:**
-
-1. CEO reads `agent-workspace/` in the failed Overseer's repo to determine:
-   - Which phase was in progress (check PLAN.md, IMPLEMENTATION-MANIFEST.md, REVIEW-LOG.md)
-   - Which artifacts exist (what is complete vs. in-progress)
-   - Which team members may still be running (check last known spawns)
-2. CEO shuts down any orphaned team members (sends `shutdown_request` to each).
-3. CEO spawns a NEW Overseer for the repo using the Overseer template from `templates.md`.
-
-**Respawn instructions to include in the new Overseer's prompt:**
+Each phase end is gated by a sentinel file in `agent-workspace/`. The `check_phase_gate.py` `PreToolUse` hook reads `agent-workspace/PHASE-GATES.json` (written by the CEO at wave start) to map role → required sentinel.
 
 ```
-Resume from Phase {N}.
-These artifacts already exist: {LIST_OF_ARTIFACTS}.
-These phases are complete: {LIST_OF_COMPLETE_PHASES}.
-These team members may still be running: {LIST_OR_NONE}.
-Read agent-workspace/ to re-ground yourself before requesting any new spawns.
+agent-workspace/PLAN.GATE         — written by TaskCompleted hook after PLAN.md structure validates
+agent-workspace/RESEARCH.GATE     — written after 5-condition AND-gate passes
+agent-workspace/IMPLEMENT.GATE    — written by CEO after worktree merge + broad suite passes
+agent-workspace/INDEX.GATE        — written after codebase-index-tools check --all returns 0 stale
+agent-workspace/REVIEW.GATE       — written after judge JSON "verdict": "PASS" + dual reviewer PASS
 ```
 
-4. New Overseer reads `agent-workspace/` to verify state and continues the pipeline from the checkpoint.
-5. CEO messages the Scribe to log the failure and respawn to `logs/{prefix}/timeline.log` and `decisions.log`.
+The `check_pipeline_complete.py` Stop hook blocks the CEO's turn from ending while any `*.GATE` is missing or `agent-workspace/ESCALATE_REQUIRED` is set.
+
+### Phase Transitions (CEO actions at each gate)
+
+**Native plan-approval gate (Phase 1 → Phase 2):**
+The architect (`team-architect`) runs as a teammate in plan mode. After the architect submits its plan, the **CEO reviews the plan draft and explicitly approves it** using the native teammate plan-approval primitive before the architect proceeds to execution mode. This is the native implementation of the Phase 1→2 gate — it replaces the old `goat-plan` separate-session pattern with a harness-enforced approval step. The CEO MUST approve the plan before the architect may take any write action. Criteria for approval: PLAN.md contains all required sections, the fenced JSON acceptance-criteria block is present, and all criteria are testable (not vague). If the plan fails criteria: CEO rejects with specific required changes; architect revises and resubmits.
+
+**Plan → Research (PLAN.GATE write):**
+- After CEO plan-approval (above), `TaskCompleted` hook `.claude/hooks/check_artifacts.py` verifies PLAN.md exists and has the required structure. On success it exits 0 (allows the task to close). **The hook does NOT write PLAN.GATE** — it only validates artifact presence. **(HARD validation — hook live)**
+- CEO action: after `check_artifacts.py` passes (task closes), **CEO explicitly writes `agent-workspace/PLAN.GATE`** to advance the pipeline, then spawns researchers.
+
+**Research → Implement (RESEARCH.GATE write):**
+- CEO (or overseer) verifies the 5-condition AND-gate: both researchers at 0 open issues, all ISSUE-TRACKER.md items resolved or dismissed, no plan gaps, every step has an executable command, `IMPLEMENTATION-MANIFEST.md` exists. On pass, CEO writes `RESEARCH.GATE`.
+- CEO action: spawn implementers (with worktree isolation if parallel).
+
+**Implement → Index (IMPLEMENT.GATE write):**
+- CEO merges worktree branches in fixed order, running the broad suite between each merge (`check_test_gate.py` via TaskCompleted, or CEO-run equivalent). On all merges passing, CEO writes `IMPLEMENT.GATE`.
+- CEO action: spawn index-updater on merged main (no isolation — runs ONCE on main, never per-worktree).
+
+**Index → Review (INDEX.GATE write):**
+- `TaskCompleted` hook on index-updater task runs `codebase-index-tools check --all --format json`; parses JSON; exit 2 if `stale > 0` or `missing > 0`. On pass, writes `INDEX.GATE`.
+- CEO action: spawn Reviewer A + Reviewer B simultaneously.
+
+**Review → Verify/Finalize (REVIEW.GATE write):**
+- `check_review_gate.py` on TaskCompleted: parses judge's JSON verdict block; exit 2 unless `"verdict": "PASS"`; increments `REVIEW-ITERATION.txt`. On iteration > 2, exit 1 (allow) but writes `ESCALATE_REQUIRED`.
+- Completeness critic runs as a haiku subagent after both reviewers: emits JSON list of acceptance criteria addressed by neither reviewer. CEO reads this before advancing.
+- On dual PASS + judge PASS + no uncovered criteria, CEO writes `REVIEW.GATE`.
+- CEO action: Phase 6 — CEO runs broad suite independently.
+
+**Verify (Phase 6 — CEO-run):**
+- CEO runs the broad suite against a frozen baseline (the commit SHA at the start of the wave, recorded in `agent-workspace/BASELINE.txt`).
+- If the CEO's run fails after the implementer's run passed: red flag for branch/cwd mismatch — investigate before proceeding.
+- On pass + all five GATE sentinels present + `ESCALATE_REQUIRED` absent: CEO commits via `ceo-commit.sh <pathspec>`, writes SESSION COMPLETE to the dashboard.
 
 ---
 
-### Infrastructure Errors (Repo unreachable, Tool failure)
+## Part 3 — Anti-Drift Supervision Protocol
 
-- CEO reports to user: what failed, what was being attempted, which repos are affected.
-- CEO suggests remediation (retry, check path, restart tool, manual intervention).
-- CEO pauses affected repos pending user response.
-- Resume normal operation once user confirms the issue is resolved.
+### Out-of-Band Monitor (never poll in-band)
+
+The CEO monitors running agents via two side-channels. Do NOT send in-band poll messages to a busy agent — messages deliver only at turn boundaries, and a marathon turn has no boundaries.
+
+**Side-channel 1 — `claude agents` view:** The 15-second-refresh summary shows agent status, longest-running item, and most recent output. An agent showing "Working" with no status update for anomalously long signals stall or marathon. The CEO checks this view after each cross-repo event or on a natural pause.
+
+**Side-channel 2 — STATUS.md heartbeat:** Agents write one-line heartbeat updates to `agent-workspace/STATUS.md` at each checkpoint. Schema:
+```
+[ISO_TIMESTAMP] [AGENT_NAME] [PHASE] [CURRENT_UNIT] [STATUS: working|checkpoint|yielding|done]
+```
+The CEO monitors STATUS.md staleness via a background Bash until-loop (`run_in_background: true`). This platform is Windows 11; `stat -c %Y` (GNU) and `stat -f %m` (BSD/macOS) are NOT available natively. Use PowerShell to read the last-write timestamp:
+
+**PowerShell (Windows — preferred on this platform):**
+```powershell
+$sentinel = "agent-workspace/STATUS.md"
+$threshold = 120  # seconds
+while ($true) {
+    $age = ([DateTime]::UtcNow - (Get-Item $sentinel).LastWriteTimeUtc).TotalSeconds
+    if ($age -gt $threshold) { Write-Output "STALL detected: $sentinel is ${age}s old"; break }
+    Start-Sleep 30
+}
+```
+
+**Bash fallback (only if Git Bash with GNU coreutils is confirmed installed):**
+```bash
+sentinel="agent-workspace/STATUS.md"
+threshold=120
+while true; do
+    age=$(( $(date +%s) - $(date -r "$sentinel" +%s 2>/dev/null || echo 0) ))
+    [ "$age" -gt "$threshold" ] && { echo "STALL: $sentinel is ${age}s old"; break; }
+    sleep 30
+done
+```
+
+When the loop exits, the CEO receives a notification and checks whether STATUS.md updated (progress) or the staleness threshold was met (stall). If stall: CEO writes `agent-workspace/STOP` — the `PreToolUse` hook halts the agent at its next tool boundary (faster than a turn boundary).
+
+**Note:** There is no native `asyncRewake` primitive in Claude Code. The PowerShell/Bash background loop above is the correct and portable stall-detection mechanism.
+
+### Hard Stop vs Soft Redirect
+
+| Situation | CEO action | Delivery |
+|---|---|---|
+| Agent is stalled / marathon / hit unauthorized territory | Write `agent-workspace/STOP` | Fires at next tool boundary (fast) |
+| Agent needs a course correction but is working normally | `SendMessage` with specific redirect | Fires at next turn boundary |
+| Agent needs to be shut down cleanly | `SendMessage`: "Complete your current unit, write STATE note, then stop." + write `STOP` as backup | Message first; STOP as safety net |
+
+### STOP-File Lifecycle
+
+- CEO writes `agent-workspace/STOP` to halt agents.
+- The `PreToolUse` hook (`check_stop_file.py`) reads this file before every `Bash`/`PowerShell`/`Write`/`Edit` call and exits 2 if present.
+- The hook contains an explicit allow for `Remove-Item .../STOP` so the CEO can clear the file to resume.
+- After clearing STOP and verifying agent state, CEO resumes by `SendMessage`: "STOP cleared. Resume from `<last STATE note>`. Write a STATUS.md heartbeat before your first tool call."
 
 ---
 
-## Progress Dashboard
+## Part 4 — Worktree Merge Order (§D Integration)
 
-CEO updates and displays the dashboard after each phase completion, cross-repo event, pause/resume, or error. The dashboard is the primary output the user sees — keep it current and accurate.
+When parallel implementers complete their worktree branches, the CEO integrates in this fixed order:
 
-**Update triggers:** phase completion, cross-repo event, pause/resume, error/escalation, user request.
+1. **Verify each branch before merging:** CEO spawns a `team-verifier` (read-only, no isolation, `disallowedTools: Write, Edit`) per branch: "Run `git diff master..worktree-<name>`. Verify the diff is consistent with the IMPLEMENTATION-MANIFEST.md scope for this batch. PASS or FAIL with evidence." Do not merge a FAIL branch — escalate.
 
-**Display rule:** Only show the dashboard and CEO decisions to the user. Suppress verbose logging output (log entries are written to files silently).
+2. **Merge in manifest order:** For each PASS branch, in the order specified by `IMPLEMENTATION-MANIFEST.md`:
+   ```
+   git merge worktree-<name> --no-ff -m "integrate: <batch-description>"
+   ```
+   Then immediately run the broad test suite. Abort and escalate on any failure before merging the next branch.
 
-### Session Dashboard Format
+3. **Conflict resolution:** If `git merge` reports conflicts, do NOT force-merge. Options in order: (a) CEO cherry-picks individual non-conflicting commits from the branch, (b) CEO spawns a manual-merge subagent with both branches and the conflict description, (c) escalate to operator.
 
-The dashboard uses a tree-style layout with a three-part structure per repo:
-1. **Title line** — repo name + task, then thin horizontal line (`───`) extending to the right margin
-2. **Progress line** — indented below: block-character progress bar, phase info, activity, agents
-3. **Detail tree** — cumulative metrics (impl, review, research) as branches
+4. **After all branches merged:** CEO writes `IMPLEMENT.GATE`. Then Phase 4 (index update) runs once on merged main.
 
-Framed by a double-line (`════`) header and footer. Output as regular text.
+5. **Worktree cleanup:** After the merge is stable and `IMPLEMENT.GATE` is written, CEO removes merged worktrees: `git worktree remove worktree-<name> --force`. The `cleanupPeriodDays: 7` setting sweeps any orphaned ones.
 
-**Mid-session example:**
+6. **Pathspec discipline:** Every CEO `git add` uses explicit pathspecs via `ceo-commit.sh`. The pattern `git add -A` and `git add .` are denied at the settings level and are never typed, even during recovery.
+
+---
+
+## Part 5 — Clean Shutdown Protocol
+
+### Normal completion
+
+1. All `*.GATE` sentinels exist. `ESCALATE_REQUIRED` is absent. `.claude/hooks/check_pipeline_complete.py` Stop hook allows the CEO turn to end. **(HARD — hook live)**
+2. CEO writes SESSION COMPLETE dashboard entry.
+3. CEO updates `repo-registry.json` with the wave's outcome (committed SHA, phase reached, open questions).
+4. CEO writes `agent-workspace/MISSION.md` final state checkpoint.
+5. If milestone-level task: CEO spawns `team-roadmap-architect` type-2 close (updates the roadmap milestone as complete with evidence).
+6. **Graceful shutdown (native shutdown protocol):** CEO sends a `SendMessage` to each active Overseer: "Pipeline complete. Finish your current unit, write your final STATUS.md entry, then shut down." Each Overseer acknowledges shutdown or rejects (with reason). CEO waits for Overseer acknowledgement before calling `TeamDelete`. If an Overseer does not acknowledge within a reasonable time, CEO uses the forced shutdown path below.
+7. CEO calls `TeamDelete` to disband the team and clean up teammate processes. Do not skip `TeamDelete` — it ensures clean process termination. If teammates are still running when `TeamDelete` is called, the call fails; send shutdown requests first.
+
+### Forced shutdown (operator STOP only)
+
+> Context pressure is NOT a forced-shutdown trigger. This path fires only on an operator `STOP` file or a genuine terminal escalation — never because the window is filling. For low context, see "Context-limit approach" below: you persevere through compaction, you do not shut down.
+
+1. CEO writes `agent-workspace/STOP` immediately (halts all agent tool calls at their next boundary).
+2. CEO writes `agent-workspace/MISSION.md` with CURRENT STATE block: phase reached, which sentinels exist, which agents were running (names + last STATUS.md entry), which tasks were open, what the next action should be.
+3. CEO updates `repo-registry.json` partial state.
+4. CEO writes a final STATUS.md entry: `[ISO_TIMESTAMP] CEO SESSION_END phase=<N> reason=forced next=<action>`.
+5. CEO response to operator: concise state summary referencing `MISSION.md` path and the next-action line.
+
+### Context-limit approach (PERSEVERE — do not stop) — see anti-drift §9
+
+**Low context is NOT a stop condition.** Auto-compaction in this harness is automatic, silent, and made lossless by the survival loop (`check_precompact.py` self-heals the resume anchor before the prune; `inject_handoff_context.py` re-injects it after, async:false). When the CEO's window fills:
+
+1. **Keep working.** Do NOT pause, write a "handoff and wait", spawn a "fresh CEO continuation", or ask the operator to `/resume`. The compaction happens transparently under you and you continue on the other side. (The old "self-detect and spawn a fresh continuation" instruction is removed — it caused unnecessary halts.)
+2. **Stay lean so compactions are rare and clean:** delegate all verbose work to subagents (each has its own context window), keep your own turns short, never read large files yourself. Your durable memory is files + git (`RESUME-STATE.md`, `agent-workspace/`, `*.GATE`, `MISSION.md`), not your context.
+3. **After a compaction, resume — don't re-plan.** Read the re-injected `RESUME-STATE.md`, verify its machine block against `git` + `*.GATE` (Doctrine #2), then continue the single `NEXT_ACTION`. Do not re-derive completed phases or re-summarize the session.
+4. **The only stops** are the operator `STOP` file, `ESCALATE_REQUIRED`, genuine mission completion, or a decision that truly needs the operator. Context pressure is none of these.
+
+For crash resilience beyond a single session (process death, not just compaction), the optional outer loop `scripts/autonomous-loop.ps1` restarts the session and the SessionStart hook re-grounds the CEO from the anchor. See anti-drift §9d.
+
+---
+
+## Part 6 — Recovery Protocol
+
+### Agent crash / context exhaustion / unresponsive agent
+
+**Detection:** Agent has not written a STATUS.md heartbeat in > 2× the expected unit time, and the `claude agents` view shows it stalled.
+
+1. CEO writes `agent-workspace/STOP` (cancels further tool calls from the stalled agent).
+2. CEO reads `agent-workspace/` to determine state:
+   - Which `*.GATE` sentinels exist (what phases completed).
+   - Which artifacts are present (PLAN.md, RESEARCH-LOG.md, IMPLEMENTATION-MANIFEST.md, etc.).
+   - What the agent's last STATUS.md entry says.
+   - Whether the agent committed anything to its worktree branch (`git log worktree-<name>` if applicable).
+3. CEO clears the STOP file (`Remove-Item agent-workspace/STOP`).
+4. CEO spawns a replacement agent of the same type with a reconstruction brief:
+   ```
+   Resume from [PHASE] for [REPO].
+   Existing artifacts: [LIST].
+   Your worktree branch (if applicable): worktree-<name>.
+   Last state note: [LAST_STATUS_LINE].
+   Read agent-workspace/ before any action. Write a STATUS.md heartbeat as your first action.
+   Continue from: [SPECIFIC_NEXT_ACTION].
+   ```
+5. CEO writes to `logs/<prefix>/timeline.log`: `[ISO_TIMESTAMP] AGENT_RECOVERED — <name> respawned from Phase <N>`.
+
+### /resume behavior note
+
+`/resume` restores the CEO's context but does NOT restore in-process teammates. On resume, the CEO MUST: (a) read `agent-workspace/MISSION.md`, (b) check STATUS.md for last heartbeats, (c) check which `*.GATE` sentinels exist, (d) use the `claude agents` view to see if any agents are still running or idle, then treat unresponsive ones as crashed and apply the recovery steps above.
+
+### Overseer crash (multi-repo wave)
+
+Same as agent crash recovery above, with two additions:
+- CEO also checks the per-repo `logs/<prefix>/timeline.log` for last known phase.
+- The replacement Overseer is spawned with the OUTBOUND/INBOUND flow context for its repo's relationships (read from `repo-registry.json`).
+
+---
+
+## Part 7 — Escalation Protocol
+
+### Escalation triggers
+
+- `ESCALATE_REQUIRED` written by `check_review_gate.py` after 2 review iterations.
+- Judge issues a verdict of `FAIL` with findings that cannot be addressed within the current wave scope.
+- Cross-repo conflict that cannot be deferred to review (both repos in active implementation, conflict is in shared foundation code).
+- CEO-Assistant returns `UNCLEAR` on a Tier-2 impact assessment and the Overseer cannot proceed without resolution.
+- Infrastructure failure (repo unreachable, codebase-index-tools failing, test runner broken).
+
+### Escalation to operator format
+
+When escalating, the CEO provides exactly:
+1. **What happened:** the specific gate that fired or the conflict encountered.
+2. **What was tried:** the fix loops already attempted (with iteration numbers).
+3. **The decision needed:** a specific binary or multiple-choice question, not an open-ended "what should I do?"
+4. **The cost of each option:** brief, concrete.
+5. **CEO's recommendation:** which option, and why, in one sentence.
+
+The CEO does NOT dump raw agent output, full reviewer transcripts, or long diffs in the escalation — those are available in `agent-workspace/` for the operator to pull if needed.
+
+### After operator decision
+
+CEO relays the decision to the relevant Overseer via `SendMessage`, updates `MISSION.md`, writes to `decisions.log`, clears `ESCALATE_REQUIRED` if applicable, and resumes the pipeline at the appropriate phase gate.
+
+### Remote approval via Channels (unattended runs)
+
+For unattended pipeline runs where the operator is away, the CEO can surface blocking decisions to the operator's phone via **Channels** (requires `claude --channels plugin:telegram@claude-plugins-official` at session launch, v2.1.80+). Channels pushes permission prompts and escalation messages to Telegram/Discord so the operator can approve or deny remotely.
+
+**Constraints and non-substitutions:**
+- Channels is a research preview requiring the `--channels` flag; not available on Bedrock/Vertex/Foundry.
+- The session MUST be running (open terminal) for events to arrive. This is not a fully-unattended mechanism — for fully-unattended runs where nobody will watch the session, use `--dangerously-skip-permissions` with hard deny rules instead (never as a substitute for deny rules).
+- For this harness, Channels is OPTIONAL: use it when an operator wants remote approval on blocking escalations without being at the terminal. When not using Channels, the CEO escalates in-band and the operator responds on their next check-in.
+
+---
+
+## Part 8 — Logging (Lightweight, Direct)
+
+The `team-ceo-scribe` agent is REMOVED. The CEO logs directly. Three files per repo, written by the CEO using the `Write`/`Edit` tools (the CEO's own permissions allow this; subagents do not write log files).
+
+**Files:**
+- `logs/<prefix>/timeline.log` — phase events, agent spawns/shutdowns, PAUSE/RESUME.
+- `logs/<prefix>/decisions.log` — CEO decisions affecting repo strategy.
+- `logs/<prefix>/cross-repo.log` — all cross-repo communications routed through CEO.
+
+**Entry format:**
+```
+[YYYY-MM-DDTHH:MM:SSZ] [EVENT_TYPE] — description
+```
+
+**Critical events (log immediately):**
+`DECISION`, `CROSS_REPO_ROUTE`, `TIER2_ASSESSMENT`, `ERROR`, `ESCALATION`, `PAUSE`, `RESUME`, `AGENT_RECOVERED`.
+
+**Routine events (batch at phase boundaries):**
+`PHASE_COMPLETE`, `AGENT_SPAWN`, `AGENT_SHUTDOWN`, `SESSION_START`, `SESSION_END`.
+
+The CEO batches routine events into a single `Edit` call at each phase transition rather than one `Edit` per event. This reduces tool-call overhead during active phases.
+
+---
+
+## Session Dashboard
+
+CEO updates the dashboard after each phase completion, cross-repo event, pause/resume, or error. Dashboard format is defined in the existing protocol layout below.
+
+### Format
 
 ```
 SESSION DASHBOARD                                              {ISO_TIMESTAMP}
-════════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════
 
-api — Fix 3 web UI bugs ───────────────────────────────────────────────────────────
-  █████▓░░  5/7 Implementation (running) | Batch 2/4 | Agents: api-implementer-2
-  ├── Research: 3 found (1C 2M) — resolved > clean pass
-  └── Review: pending
+{prefix} — {task} ─────────────────────────────────────────────────────────────
+  {bar}  {N}/6 {phase-name} ({status}) | {activity} | Agents: {list}
+  ├── Research: {summary}
+  ├── Impl: {N}/{total} batches
+  └── Review: {A: PASS/FAIL, B: PASS/FAIL} | Judge: {PASS/FAIL/pending}
 
-web — Verify auth tokens ──────────────────────────────────────────────────────────
-  ▓  Assessment (done) — No code changes needed.
+Cross-Repo ────────────────────────────────────────────────────────────────────
+  {N} outbound ({N} confirmed) | {N} inbound | {N} pauses | {N} conflicts
 
-db — Migrate user schema ──────────────────────────────────────────────────────────
-  ██▓░░░░░  2/7 Research, Iter 1 (running) | Agents: db-researcher-codebase, -tech
-  └── Research: I1 in progress...
-
-jvg — CSharpNormalizer ────────────────────────────────────────────────────────────
-  ████████  7/7 Complete | 4 files changed | commit: 3200e25
-  ├── Impl: 4/4 batches
-  ├── Review: A: PASS, B: PASS
-  └── Research: 5 found (1C 3M 1m) — resolved > clean pass
-
-Cross-Repo ────────────────────────────────────────────────────────────────────────
-  1 outbound (1 confirmed) | 1 inbound | 0 pauses | 0 conflicts
-
-════════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════
 ```
 
-**Completed session example:**
+Progress bar characters: `█` = phase complete, `▓` = phase active, `░` = phase pending. 6 segments (phases 1–6).
 
-```
-SESSION COMPLETE                                               {ISO_TIMESTAMP}
-════════════════════════════════════════════════════════════════════════════════════
+CEO Decision lines use prefix `CEO Decision:` when the CEO makes a routing or escalation call that deviates from the default path. Example: `CEO Decision: Direct fix (pipeline skipped — trivial one-liner)`.
 
-kh — Fix 3 web UI bugs ────────────────────────────────────────────────────────────
-  ████████  7/7 Complete | 3 files changed
-  ├── Impl: 2/2 batches
-  ├── Review: A: PASS, B: PASS
-  └── Research: 0 found — clean
-
-kh — Verify mapper depths ─────────────────────────────────────────────────────────
-  ▓  Assessment (done) — No code changes needed.
-
-jvg — CSharpNormalizer ────────────────────────────────────────────────────────────
-  ████████  7/7 Complete | 4 files changed | commit: 3200e25
-  ├── Impl: 4/4 batches
-  ├── Review: A: PASS, B: PASS
-  └── Research: 5 found (1C 3M 1m) — resolved > clean pass
-
-════════════════════════════════════════════════════════════════════════════════════
-```
-
-### Layout Rules
-
-**Frame:** Double-line (`════`) header underline and footer. Header line has `SESSION DASHBOARD` or `SESSION COMPLETE` left-aligned, timestamp right-aligned.
-
-**Title line:** `{prefix} — {task} ───`. Thin horizontal line (`─`) extends to a consistent right margin (~80 chars). Separates each repo visually.
-
-**Progress bar:** Block characters for instant visual completion:
-- `█` = phase complete
-- `▓` = phase active
-- `░` = phase pending
-- 8 segments representing phases 0–7.
-- **Completed repos** (whether via full pipeline or Phase 0 resolution) show a full bar: `████████`
-- Assessment-only repos in progress use a single `▓`.
-
-**Progress line:** Indented 2 spaces. Format: `{bar}  {N}/7 {phase-name} ({status}) | {activity} | Agents: {list}`.
-- Status values: `running`, `paused`, `blocked`, `done`
-- Activity: current batch, iteration, or step (when applicable)
-- Agents: active agent names (omit segment when none)
-
-**Detail tree:** Indented 2 spaces, using `├──` (intermediate) and `└──` (last). Only include lines that apply:
-- **Impl** — `{N}/{total} batches`
-- **Review** — `A: PASS/FAIL, B: PASS/FAIL` or `pending`
-- **Research** — compact single-line format: `{found} found ({severity}) — resolved > clean pass`
-  - Severity key: `C` = critical, `M` = major, `m` = minor
-  - `>` separates iterations: text before `>` is iteration 1 result, after is iteration 2
-  - In-progress: `I1 in progress...`
-  - Single iteration with no issues: `0 found — clean`
-- **Assessment** — Phase 0 single line: `Assessment (done) — {result}`
-- **CEO Decision** — When the CEO makes a routing decision (e.g., direct fix instead of full pipeline, pipeline activation, loop exit), display it prominently on the progress line or as a detail tree entry prefixed with `CEO Decision:`. This ensures users understand why a repo took an unusual path (e.g., skipping the pipeline). Format: `CEO Decision: {action} ({rationale})`
-  - Examples: `CEO Decision: Direct fix (pipeline skipped, narrow scope)`, `CEO Decision: Pipeline activated (new subsystem, 37 test cases)`, `CEO Decision: LOOP_EXIT after clean verification`
-- **Files changed** — count of modified files (shown for repos past implementation)
-- **Commit** — hash (shown for completed repos that committed)
-- **TASK COMPLETED** — final line in the detail tree for any repo whose work is finished. Signals clearly that no further work is pending for this repo. Always use `└── TASK COMPLETED` as the last tree entry.
-
-**Omit what doesn't apply.** A repo in Phase 2 has no Impl or Review. A Phase 0 repo shows only the assessment line. Only display what exists. When a repo is complete, always show the full progress bar (`████████`) and end with `└── TASK COMPLETED`.
-
-**Cross-Repo section:** Only shown when related groups exist. Uses the same thin-line title. Omit for isolated-only sessions.
-
----
-
-## Logging Format
-
-### Timestamp Format
-
-ISO 8601: `YYYY-MM-DDTHH:MM:SSZ`
-Example: `2026-03-01T14:23:07Z`
-
-### Entry Format
-
-```
-[timestamp] [EVENT_TYPE] — description
-```
-
-Example: `2026-03-01T14:23:07Z PHASE_COMPLETE — {prefix} Phase 2 (Research) complete. Artifacts: PLAN.md, RESEARCH-NOTES.md.`
-
----
-
-### Scribe-Managed Logging
-
-**All logging is handled by the Scribe agent (`ceo-scribe`).** The CEO does not write log entries directly. Instead, the CEO sends brief messages to the Scribe describing events, and the Scribe writes properly formatted entries to the correct files.
-
-The Scribe is spawned at session start (Step 3.1) and runs for the entire session.
-
-**Event types the Scribe handles:**
-
-| Event Type | Log File | Triggered By |
-|------------|----------|-------------|
-| `SESSION_START` | `timeline.log` | CEO message at session start |
-| `SESSION_END` | `timeline.log` | CEO message at session end |
-| `PHASE_COMPLETE` | `timeline.log` | CEO message after Overseer reports |
-| `AGENT_SPAWN` | `timeline.log` | CEO message after spawning an agent |
-| `AGENT_SHUTDOWN` | `timeline.log` | CEO message after shutting down an agent |
-| `PAUSE` | `timeline.log` | CEO message when pausing a repo |
-| `RESUME` | `timeline.log` | CEO message when resuming a repo |
-| `ERROR` | `timeline.log` | CEO message when error detected |
-| `DECISION` | `decisions.log` | CEO message when making a strategic decision |
-| `CROSS_REPO_ROUTE` | `cross-repo.log` | CEO message when routing info between repos |
-| `IMPACT_ASSESSMENT` | `cross-repo.log` | CEO relays CEO-Assistant findings to Scribe |
-| `CONTEXT_REPORT` | `timeline.log` | CEO relays CEO-Assistant findings to Scribe |
-
-**File targets:**
-
-- `logs/{repo-prefix}/timeline.log` — Phase progression and all events for this repo
-- `logs/{repo-prefix}/decisions.log` — CEO decisions affecting this specific repo
-- `logs/{repo-prefix}/cross-repo.log` — All cross-repo communications routed through CEO for this repo
-
-**CEO-to-Scribe message examples:**
-
-- `"kh: Spawned kh-planner for Phase 1. Task: Fix 3 web UI bugs."`
-- `"jvg: Phase 2 complete. Research Iter 1: 5 issues (1C 3M 1m). All resolved in plan revision."`
-- `"Decision for kh: Respawning overseer — previous one only reviewed code, did not run actual mapper."`
-- `"Cross-repo: api auth change affects web. Routed to web-overseer. Severity: major."`
-
-**CEO-Assistant reports:** When a CEO-Assistant completes a mission, the CEO relays the findings to the Scribe for logging. The CEO-Assistant itself does not write to log files.
-
----
-
-### Hybrid Logging Strategy
-
-Not all events require immediate logging. The CEO batches routine events and sends them as a single message to reduce communication overhead.
-
-**Critical events (log immediately):**
-- `DECISION` — CEO decisions affecting repo strategy
-- `CROSS_REPO_ROUTE` — cross-repo routing events
-- `IMPACT_ASSESSMENT` — impact assessments
-- `ERROR` — errors and escalations
-- `PAUSE` / `RESUME` — dependency pauses
-
-**Routine events (batch and log periodically):**
-- `AGENT_SPAWN` — agent spawned
-- `AGENT_SHUTDOWN` — agent shut down
-- `PHASE_COMPLETE` — phase completions
-- `SESSION_START` / `SESSION_END` — session lifecycle
-- `CONTEXT_REPORT` — CEO-Assistant context reports
-
-**Batch message format:**
-The CEO sends batched events with a `BATCH LOG:` prefix:
-```
-BATCH LOG:
-- kh: Spawned kh-planner for Phase 1.
-- kh: Phase 1 complete. Artifacts: PLAN.md, index-context.md.
-- jvg: Spawned jvg-researcher-codebase and jvg-researcher-technical for Phase 2, Iteration 1.
-```
-The Scribe processes each line as a separate log entry with the current timestamp.
-
-**Batch trigger:** CEO sends batched logs after completing a phase transition, after spawning/shutting down a group of agents, or at natural pauses in orchestration. Do not hold routine events longer than one phase boundary.
+Only show fields that exist. A repo in Phase 2 has no Impl or Review line. Completed repos show `████████` and end with `└── TASK COMPLETED`.

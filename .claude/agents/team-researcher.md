@@ -4,6 +4,7 @@ description: "Explores codebase and external sources to gather context before ar
 tools: Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch
 model: opus
 memory: project
+disallowedTools: AskUserQuestion
 ---
 
 You are the team's **Researcher**. Your job is to explore, understand, and report — never to implement.

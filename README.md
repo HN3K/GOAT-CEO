@@ -1,329 +1,249 @@
-<div align="center">
-
 # GOAT-CEO
 
-### One session. Every repo. Total coordination.
+A multi-repo orchestration harness for Claude Code. One Claude Code session acts as a
+"CEO" that drives structured, gated agent pipelines across several repositories in
+parallel, coordinates changes that cross repo boundaries, and runs unattended through
+context compaction without losing state.
 
-**The multi-repo orchestration layer for Claude Code agent teams.**
+It is **not** an application or a daemon. It is a set of Claude Code skills (slash
+commands), custom subagent definitions, and `settings.json` hooks that turn a single
+Claude Code session into a supervised, rule-enforced orchestrator built entirely on
+native Claude Code primitives.
 
-Point it at your repos. Describe the work. Walk away.<br>
-GOAT-CEO spawns parallel agent pipelines, routes cross-repo changes,<br>
-and delivers reviewed, indexed, tested code — across every repo at once.
-
-[![Built for Claude Code](https://img.shields.io/badge/Built_for-Claude_Code-7C3AED?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDJMMiA3bDEwIDUgMTAtNS0xMC01eiIvPjxwYXRoIGQ9Ik0yIDE3bDEwIDUgMTAtNSIvPjxwYXRoIGQ9Ik0yIDEybDEwIDUgMTAtNSIvPjwvc3ZnPg==)](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)
-[![Experimental](https://img.shields.io/badge/Status-Experimental-orange?style=for-the-badge)](https://github.com/HN3K/GOAT-CEO)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-
-</div>
-
----
-
-## The Problem
-
-You're the human switchboard.
-
-You have repos that need work — maybe they share an API, maybe they don't. Either way, you're juggling terminals, copy-pasting context between sessions, manually checking that changes in one place didn't break something in another, and hoping you didn't miss anything. Every repo is its own isolated world, and you're the only bridge between them.
-
-This doesn't scale to 2 repos. It definitely doesn't scale to 5.
-
-**GOAT-CEO replaces the switchboard with an executive.**
-
-One session coordinates everything. Repos that share surfaces get automatic cross-repo routing. Repos that don't share anything get perfect isolation. Simple tasks don't waste a full agent pipeline. Complex tasks get a structured one. You describe what needs to happen. The CEO figures out how.
+> **Status: experimental.** Requires Claude Code with the agent-teams feature
+> (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). The shipped hooks assume Windows paths and a
+> specific Python interpreter path — you must adapt them to your environment (see
+> [Setup](#setup)). MIT licensed.
 
 ---
 
-## What It Looks Like
+## What it does
 
-```
-SESSION DASHBOARD                                              2026-03-01T14:32:00Z
-════════════════════════════════════════════════════════════════════════════════════
-
-api — Fix 3 web UI bugs ───────────────────────────────────────────────────────────
-  █████▓░░  5/7 Implementation (running) | Batch 2/4 | Agents: api-implementer-2
-  ├── Research: 3 found (1C 2M) — resolved > clean pass
-  └── Review: pending
-
-web — Verify auth tokens ──────────────────────────────────────────────────────────
-  ▓  Assessment (done) — No code changes needed.              ← no pipeline wasted
-
-db — Migrate user schema ──────────────────────────────────────────────────────────
-  ██▓░░░░░  2/7 Research, Iter 1 (running) | Agents: db-researcher-codebase, -tech
-  └── Research: I1 in progress...
-
-jvg — CSharpNormalizer ────────────────────────────────────────────────────────────
-  ████████  7/7 Complete | 4 files changed | commit: 3200e25
-  ├── Impl: 4/4 batches
-  ├── Review: A: PASS, B: PASS
-  └── Research: 5 found (1C 3M 1m) — resolved > clean pass
-
-Cross-Repo ────────────────────────────────────────────────────────────────────────
-  1 outbound (1 confirmed) | 1 inbound | 0 pauses | 0 conflicts
-
-════════════════════════════════════════════════════════════════════════════════════
-```
-
-Four repos. Parallel pipelines. One terminal. Everything tracked.
-
-The `web` repo didn't need code changes — the Overseer figured that out on its own and resolved it directly. No agents spawned. No tokens wasted. The CEO is frugal.
+- **Drives N repos from one session.** Each repo gets its own "Overseer" subagent running a
+  6-phase pipeline (plan → research → implement → index → review → finalize). Repos run in
+  parallel; the human watches one terminal.
+- **Routes cross-repo changes.** Repos declared as a related group flag contract/schema/API
+  changes to the CEO, which classifies them and assesses impact before any dependent repo
+  acts. Repos declared isolated receive nothing about each other.
+- **Enforces gates with hooks, not vibes.** Phase transitions, single-committer discipline,
+  test gates, review gates, and stop signals are enforced by `settings.json` hooks that run
+  regardless of what the model "decides." A hook can block a tool call (`exit 2`) even under
+  `--dangerously-skip-permissions`.
+- **Survives context compaction losslessly and unattended.** A self-healing `PreCompact`
+  hook writes a machine-readable resume anchor (git HEADs, phase gates, mission, task
+  snapshot) to disk before every compaction; a `SessionStart` hook re-injects it afterward.
+  The CEO is instructed to keep working *through* compaction rather than stopping for a
+  human. See [Autonomous perseverance](#autonomous-perseverance-through-compaction).
+- **Is frugal by default.** Before spawning a pipeline, the Overseer reads the code and
+  assesses whether the task needs a pipeline at all. Investigation/verification tasks and
+  one-line fixes are resolved directly — no 8-agent pipeline for a typo.
 
 ---
 
-## What You Can Do With It
+## How it works
 
-**"I need to build matching components across two repos."**<br>
-Build an API endpoint in one repo and its client in another — simultaneously. Cross-repo communication means both teams see the same contract from day one. A cross-repo reviewer verifies alignment at the end. No integration surprise.
+### Roles
 
-**"I have 5 unrelated projects and I don't want 5 terminals."**<br>
-Declare them isolated. GOAT-CEO runs them all in parallel with zero cross-contamination. Each repo gets its own agent team, its own pipeline, its own progress bar — all in one session. You watch the dashboard instead of alt-tabbing between windows.
+| Role | Claude Code subagent type | Count | Responsibility |
+|---|---|---|---|
+| **CEO** | the main session | 1 | Sole integrator. Owns the mission, the rules, the phase gates, and is the **single committer** (all `git` writes go through it). Spawns Overseers and cross-repo agents. |
+| **Overseer** | `team-overseer` | 1 per repo | Runs one repo's 6-phase pipeline. Spawns its own pipeline agents. Reports phase completions and cross-repo flags to the CEO. |
+| **Architect / Planner** | `team-architect` | per phase | Writes the plan (Phase 1); acts as the review judge (Phase 5). |
+| **Researcher** | `team-researcher` | 2 parallel | Codebase + technical research; iterate until a 5-condition convergence gate passes. |
+| **Implementer** | `team-implementer` | N batches | Execute batched edits, optionally in isolated git worktrees. Cannot commit — they report a branch + file list. |
+| **Verifier** | `team-verifier` | 2 + per-branch | Independent dual review; per-worktree diff verification. |
+| **CEO-Assistant** | `team-ceo-assistant` | on demand | Read-only cross-repo impact scout (spawned in plan mode). |
+| **Cross-Repo Reviewer** | `team-cross-reviewer` | per group | Verifies API/schema/config alignment across a related group after all members finish. |
 
-**"It's probably a one-line fix, I don't need a whole pipeline for this."**<br>
-You don't get one. The Overseer reads the code first and assesses what's actually needed. Simple fix? It handles it alone — one agent instead of eight. The full pipeline only activates when the task genuinely requires planning, research, implementation, and review.
+**Single authority, flat integration.** Overseers may spawn their own pipeline agents
+(native deep spawn), but the CEO is the only agent that commits. Implementers are denied
+commit/push by permission rules and hand back worktree branches for the CEO to merge in a
+fixed order, running the test suite between merges.
 
-**"I want a structured implementation with real quality gates."**<br>
-The 6-phase pipeline runs a research loop that iterates until zero issues remain, batches implementation for parallel execution, and dual-reviews everything with two independent reviewers. If the index isn't updated, the review fails. No shortcuts.
+### The pipeline (per repo)
 
-**"I just want a plan — I'll decide about implementation later."**<br>
-Run `/goat-team:goat-plan`. You get a fully researched plan with all risks identified and resolved. No code touched. Review it yourself and decide when to proceed.
+| Phase | What happens | Gate to advance |
+|:--:|---|---|
+| **0** | **Assessment.** Overseer reads code/tests and decides if a pipeline is warranted. Non-code tasks end here. | — |
+| **1** | **Plan.** Architect writes `PLAN.md` (goal, acceptance criteria as a fenced JSON block, task breakdown). | `PLAN.GATE` (CEO writes after plan approval) |
+| **2** | **Research.** Two researchers annotate the plan; architect revises; loop exits on a 5-condition AND-gate, emitting `IMPLEMENTATION-MANIFEST.md`. | `RESEARCH.GATE` |
+| **3** | **Implement.** Implementers execute batches (parallel via worktrees when file sets are disjoint/uncertain). CEO merges branches + runs the suite. | `IMPLEMENT.GATE` |
+| **4** | **Index.** One pass on merged main updates/repairs the Codebase-Index. | `INDEX.GATE` (0 stale + 0 missing) |
+| **5** | **Review.** Two independent reviewers → completeness critic → judge emits binding PASS/FAIL JSON. | `REVIEW.GATE` (judge PASS; capped at 2 fix iterations then escalates) |
+| **6** | **Finalize.** CEO re-runs the broad suite against a frozen baseline, then makes one pathspec-scoped commit. | — |
 
-**"I made changes manually. I want them reviewed properly."**<br>
-Run `/goat-team:goat-review`. Two independent reviewers verify your work against the plan and check index coverage. Same quality gate as the full pipeline.
-
-**"Verify that the auth flow is correct — I don't need changes, I need answers."**<br>
-The Overseer investigates directly. Reads code, runs tests, traces the flow, reports findings. No pipeline agents spawned. Assessment-First handles investigation, verification, and diagnostic tasks without burning resources.
-
-**"This repo doesn't have any of the indexing or tooling set up."**<br>
-Point GOAT-CEO at it anyway. Auto-bootstrap detects the language, scaffolds the Codebase-Index, installs the CLI tools, and validates — automatically. Or let the Overseer set it up through the pipeline if you want more control.
-
-**"My session crashed halfway through a complex task."**<br>
-Every phase writes artifacts to `agent-workspace/` — plan, research log, manifest, review log. If an Overseer runs out of context, the CEO reads the artifacts, cleans up orphaned agents, and spawns a fresh Overseer that resumes exactly where the last one stopped. This is expected, not an error.
-
-**"I used GOAT-CEO yesterday on these same repos."**<br>
-Quick Start mode. The repo registry remembers your repos, capabilities, and relationship groups. Select by number, skip registration, go straight to work.
-
----
-
-## The CEO is Frugal
-
-This isn't "throw agents at everything and hope for the best." The CEO hates wasting tokens.
-
-Every task goes through the **Assessment-First Protocol** before a single pipeline agent is spawned:
-
-1. The Overseer receives the task and independently reads the code, runs tests, checks logs, and evaluates what's actually needed.
-2. **If no code changes are needed** — investigation, verification, diagnosis — the Overseer resolves it directly and reports back. Done. One agent, zero pipeline overhead.
-3. **If it's a narrow fix** — the Overseer requests only what's necessary from the CEO. Not every task needs two researchers, three implementers, and dual review.
-4. **If it genuinely requires the full pipeline** — planning, research, implementation, review — then and only then does the CEO authorize the full agent team.
-
-The dashboard shows this in action. When you see `Assessment (done) — No code changes needed`, that's a task that would have spawned 8+ agents in a naive system. The CEO said no.
-
-**Model Profiles** give you another cost lever. Default uses Opus where it matters (planning, research) and Sonnet where speed matters (implementation, review). Economy mode drops to Sonnet/Haiku. Premium goes full Opus. Or pick per role.
+Phase gates are **sentinel files** (`agent-workspace/<PHASE>.GATE`). A `PreToolUse` hook
+blocks a role from writing until its required gate exists; a `Stop` hook blocks the CEO's
+turn from ending while any expected gate is missing.
 
 ---
 
-## Architecture
+## How it interacts with Claude Code
 
-```
-Your Claude Code session (CEO)                       ← sole spawn authority
-│
-├── ceo-scribe            Dedicated logger (Haiku, runs entire session)
-│
-├── api-overseer          Manages 6-phase pipeline for api-repo
-│   ├── api-planner                                  ← Opus
-│   ├── api-researcher-codebase    ╮                 ← Opus, parallel
-│   ├── api-researcher-technical   ╯
-│   ├── api-implementer-1         ╮                  ← Sonnet, parallel when safe
-│   ├── api-implementer-2         ╯
-│   ├── api-index-updater                            ← Sonnet
-│   ├── api-reviewer-a            ╮                  ← Sonnet, independent
-│   └── api-reviewer-b            ╯
-│
-├── web-overseer          Same structure, hermetically isolated
-│   └── ...
-│
-├── ceo-assistant-api     Cross-repo impact scout (on demand, Opus)
-├── ceo-assistant-web     Cross-repo impact scout (on demand, Opus)
-│
-└── cross-reviewer        Verifies contracts across related repos (at finalization)
-```
+GOAT-CEO is deliberately built on native primitives — there is no external state store,
+queue, or daemon. The orchestration *is* the Claude Code feature surface:
 
-**Flat hierarchy, single authority.** The CEO spawns every agent. Overseers manage their pipelines but request all spawns and shutdowns through the CEO. No agent-spawning-agent chains. No authority ambiguity.
+| Claude Code primitive | How GOAT-CEO uses it |
+|---|---|
+| **Skills / slash commands** | `/goat-ceo` (multi-repo) and `/goat-team:*` (single-repo pipeline variants) are the entry points; supporting doctrine files are read on demand. |
+| **Agent teams** (`TeamCreate`, `Agent`, `SendMessage`, `TeammateIdle`) | The team is the live pipeline substrate. Overseers are background teammates; the CEO is the fixed lead. `SendMessage` delivers redirects at turn boundaries. |
+| **Subagents with isolated context** | Verbose work (research, review, large reads) runs in subagents with their **own** context windows; only short structured results return to the CEO. This is the primary defense against CEO context exhaustion. |
+| **Task list** (`TaskCreate`, `TaskList`, `addBlockedBy`) | One task per phase per repo, chained with `addBlockedBy` to enforce phase order. The shared task list doubles as the cross-repo dashboard. |
+| **Hooks** (`settings.json`) | The enforcement layer — see [below](#the-hook-enforcement-layer). Hooks block independently of permission mode. |
+| **`permissions.deny`** | Hard, unconditional rules (`git add -A/.`, `DROP DATABASE`, `.env` writes, registry writes). Enforced even under `--dangerously-skip-permissions`. |
+| **Permission modes** | Read-only scouts (CEO-Assistant, reviewers) run in `plan` mode; unattended runs use `dontAsk` + a tight allow-list or sandboxed bypass. |
+| **Worktree isolation** | Parallel implementers each get a fresh git worktree (`isolation: worktree`) so concurrent edits never collide; the CEO merges branches afterward. |
+| **Workflow tool** (optional) | When available, the per-repo pipeline can be authored as a JavaScript Workflow script so the plan lives in the script, not the CEO's context. A prose state-machine fallback runs the same 6 phases without it. |
+| **`additionalContext` injection** | The `SessionStart` hook injects the resume anchor into a fresh/compacted session. |
+| **Plan-mode approval** | The Phase 1→2 gate is the native teammate plan-approval primitive — the architect cannot write until the CEO approves its plan. |
 
-**Isolation is real.** Isolated repos receive zero information about other repos. Their Overseers don't know other repos exist. They operate as if they're the only repo in the session.
+### The hook enforcement layer
 
-**Cross-repo communication is deliberate.** Related repos flag changes to the CEO. Non-breaking changes (Tier 1) are relayed directly. Breaking changes (Tier 2) trigger a CEO-Assistant impact assessment before anyone acts. Nothing leaks. Nothing is assumed.
+All hooks are **fail-open**: any exception exits 0, so a hook bug never blocks legitimate
+work. They are wired in `.claude/settings.json`.
 
----
-
-## The Pipeline
-
-Each repo runs a structured 6-phase pipeline (plus Phase 0 assessment):
-
-| Phase | What Happens |
-|:-----:|-------------|
-| **0** | **Assessment** — Overseer evaluates the task. Non-code tasks resolved here. Pipeline only activates for real implementation work. |
-| **1** | **Planning** — Architect loads index context, creates the plan, writes shared context for researchers. |
-| **2** | **Research & Revision** — Codebase researcher and technical researcher investigate in parallel. Architect revises. Loop iterates until both report zero issues. On exit, generates the implementation manifest. |
-| **3** | **Implementation** — Implementers execute batched tasks. Parallel when no file conflicts; sequential when files overlap. |
-| **4** | **Index Update** — Updates all affected indexes AND enriches neighboring unindexed areas. Every run leaves the index more complete. |
-| **5** | **Review** — Two independent reviewers verify implementation AND Index Updater completeness. Incomplete index = FAIL. |
-| **6** | **Finalize** — Evaluate verdicts, route failures by severity, commit on success. |
-
-The research loop has no iteration cap — quality is the only exit condition. If iteration count exceeds 3, you're consulted. The loop doesn't silently give up.
+| Event | Hook | Effect |
+|---|---|---|
+| `PreToolUse` | `check_phase_gate.py` | Blocks a role's Write/Edit/Bash until its required `*.GATE` exists. |
+| `PreToolUse` | `guard_git_commit.py` | Surfaces every commit/push for review (single-committer discipline). |
+| `PreToolUse` | `guard_destructive_db.py` | Requires an approval token before destructive DB operations. |
+| `PreToolUse` | `check_stop_file.py` | If `agent-workspace/STOP` exists, halts the agent at its next tool boundary (faster than a turn boundary — the kill switch for a runaway agent). |
+| `SubagentStop` / `TeammateIdle` | `check_artifacts.py` | Blocks a subagent/Overseer from finishing until its declared deliverable exists. |
+| `PostToolBatch` | `check_turn_budget.py` | Forces a yield if a subagent runs past a time budget. |
+| `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py`, `check_toolcall_audit.py` | Blocks task closure unless tests pass / judge verdict is PASS / reviewer actually read files. |
+| `Stop` | `check_pipeline_complete.py` | Blocks the CEO's turn from ending while any expected `*.GATE` is missing or an escalation is pending. |
+| `PreCompact` | `check_precompact.py` | Self-heals the resume anchor before compaction (never blocks). |
+| `SessionStart` | `inject_handoff_context.py` | Re-injects the resume anchor on startup/resume/compact. |
 
 ---
 
-## Cross-Repo Communication
+## Autonomous perseverance through compaction
 
-When repos share APIs, schemas, or configuration:
+The hard problem for a long unattended run is the context window filling up. Claude Code's
+auto-compaction is automatic and silent (it does not pause), but a naive agent treats
+"context is low" as a reason to stop and wait for a human. GOAT-CEO closes that gap:
 
-```
-Overseer A detects a shared surface was modified
-        │
-        ▼
-   CEO receives the flag with tier classification
-        │
-        ├── Tier 1 (non-breaking, additive)
-        │   └── Relay directly to affected Overseer — no assessment needed
-        │
-        └── Tier 2 (breaking or uncertain)
-            └── Spawn CEO-Assistant to assess actual impact
-                    │
-                    ├── No impact → false alarm, no action
-                    └── Impact confirmed → route specifics to affected Overseer
-```
+1. **Before compaction** — `check_precompact.py` regenerates a machine-readable
+   `agent-workspace/RESUME-STATE.md` from ground truth (per-repo `git` HEAD/branch, the
+   `*.GATE` sentinels present, the mission headline, dated diagnosis-doc pointers), preserves
+   the CEO-authored body (phase, task snapshot, next action), and **allows** the compaction.
+   It never blocks — blocking an auto-compaction at full context would deadlock an
+   unattended run.
+2. **After compaction** — `inject_handoff_context.py` (synchronous, so delivery is
+   guaranteed) re-injects that anchor **facts-first**, with a "verify against git + sentinels
+   before trusting" banner and a "this is a transparent resume — keep working" directive.
+3. **Doctrine** — the CEO is told that low context is *not* a stop condition; the only
+   legitimate stops are an operator `STOP` file, a hard escalation, or mission completion.
 
-**Dependency pauses are automatic.** If Repo B is building a client against Repo A's API, and Repo B gets ahead before Repo A has finalized the contract — the CEO pauses Repo B. Running work finishes, but no new phases start. When Repo A catches up, the CEO resumes Repo B. You don't manage this. The CEO does.
-
-**Cross-Repo Reviewer** runs after all repos in a related group complete. It verifies that API contracts, shared schemas, and configuration assumptions actually align — with specific file paths and literal values from each repo. Produces ALIGNED / MISMATCH / UNTESTED verdicts.
+The resume anchor is **machine-derived facts, not decaying prose**, and every durable
+artifact has a size budget so it is never truncated at the injection boundary. An optional
+outer loop (`scripts/autonomous-loop.ps1`) relaunches the session on process death (crash,
+reboot) and the `SessionStart` hook re-grounds it — so the work survives not just
+compaction but the process itself dying.
 
 ---
 
 ## The Codebase-Index
 
-The secret weapon. Hand-curated `INDEX.md` files that live alongside your code — describing structure, patterns, dependencies, and relationships. Not generated docs. Maintained knowledge.
+Agents get their bearings from a hand-maintained `Codebase-Index/` (per-directory
+`INDEX.md` files describing structure, patterns, and dependencies) queried through a local
+`codebase-index-tools` CLI — no embeddings, no vector DB, no external service. It is
+deterministic and human-readable.
 
 ```
-Codebase-Index/
-├── MASTER-INDEX.md          ← Architectural overview, routes to components
-├── api/
-│   └── INDEX.md             ← API endpoints, middleware, auth patterns
-├── core/
-│   └── INDEX.md             ← Business logic, data models, services
-└── infrastructure/
-    └── INDEX.md             ← Deployment, config, monitoring
+search --query "auth"          # which indexes cover authentication
+inject  --task "fix login bug"  # load all relevant context for a task
+check   --all                   # audit for stale / missing indexes (gates Phase 4)
+scaffold --source src/new-mod   # stub an INDEX.md for unmapped code
 ```
 
-Agents query it through `codebase-index-tools`:
-
-| Command | What It Does |
-|---------|-------------|
-| `search --query "auth"` | Find which indexes cover authentication |
-| `inject --task "fix login bug"` | Load all relevant context for a task |
-| `check --all` | Audit for stale or missing indexes |
-| `scaffold --source src/new-module` | Generate stub INDEX.md for unmapped code |
-
-No embeddings. No vector database. No external services. Just a local CLI (Python 3.8+ or Node 18+) reading structured markdown. Deterministic, inspectable, human-readable.
-
-**Progressive enrichment** means the index grows automatically. The Index Updater doesn't just fix what changed — it scans neighboring unindexed code and scaffolds new indexes. Every pipeline run leaves the codebase better mapped than before.
+If a target repo has no index/tooling, GOAT-CEO can bootstrap it (auto-detect language,
+scaffold, install the CLI) from the self-contained specs in `specs/`. Repos may also be
+registered as **read-only reference** sources that agents may cite but never modify.
 
 ---
 
-## Quick Start
+## Pros and cons
 
-```bash
-# Multi-repo orchestration — the full CEO experience
-/goat-ceo
+**Strengths**
 
-# Single-repo pipeline — plan, research, implement, review
-/goat-team:goat Fix the authentication bug in the login flow
+- One session coordinates many repos; no terminal-juggling, no manual context copying.
+- Guardrails are hook-enforced, so they hold even when the model is wrong or under
+  `--dangerously-skip-permissions` — `deny` rules and blocking hooks still fire.
+- Lossless, unattended resume across compaction and process death — durable state lives in
+  files + git, not in the context window.
+- Frugal: assessment-first means trivial tasks don't spawn a pipeline.
+- All state is inspectable on disk (`agent-workspace/`, `*.GATE`, `RESUME-STATE.md`, logs)
+  and in git — no hidden state, no database.
+- Cross-repo contract verification catches integration drift before it ships.
 
-# Plan only — get a researched plan, decide later
-/goat-team:goat-plan Design the new caching layer
+**Costs and limits**
 
-# Review only — audit existing work with dual reviewers
-/goat-team:goat-review
+- **Token-heavy.** A full multi-repo wave spawns many agents. Assessment-first and model
+  tiering reduce this, but large waves are expensive. This is not the cheap path.
+- **Experimental dependency.** Requires the agent-teams feature flag; behavior tracks the
+  current Claude Code version and can shift between releases.
+- **Environment-specific as shipped.** The hooks hardcode a Python interpreter path and
+  absolute hook paths; you must edit them for your machine/OS before use.
+- **Quality erodes slightly across many compactions** (summarization is lossy); mitigated by
+  externalizing state, but a multi-day single session is not free of drift.
+- **Single-session orchestration** is a single point of failure for the CEO; the resume
+  anchor + outer loop mitigate it but this is not a distributed system.
+- **Setup cost.** Per-repo Codebase-Index + tooling must exist or be bootstrapped, and the
+  cross-repo features assume a shared session topology.
+- **Complexity.** Many moving parts (agents, hooks, doctrine). For a single small task in a
+  single repo, plain Claude Code is simpler.
 
-# Index maintenance — audit and update without running a pipeline
-/goat-team:index-check
+---
+
+## Setup
+
+1. Requires Claude Code with agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, set in
+   `.claude/settings.json`).
+2. **Edit `.claude/settings.json` and `.claude/hooks/*.py` for your environment.** As
+   shipped they reference a Windows Python path (`...Python312\python.exe`) and absolute hook
+   paths. Replace these with your interpreter and clone location. `inject_handoff_context.py`
+   also references an absolute memory directory — point it at your own or remove it.
+3. Hooks must be trusted on first run. For unattended use, encode hard safety as
+   `permissions.deny` rules (these survive `--dangerously-skip-permissions`); never rely on
+   chat instructions, which are lost on compaction.
+
+---
+
+## Commands
+
+```
+/goat-ceo                                  # multi-repo orchestration (interactive setup, then autonomous)
+/goat-team:goat <task>                     # single-repo full pipeline
+/goat-team:goat-plan <task>                # plan + research only, no code changes
+/goat-team:goat-review                     # dual-reviewer audit of existing changes
+/goat-team:index-check                     # audit/update the Codebase-Index without a pipeline
 ```
 
-> [!NOTE]
-> GOAT-CEO requires Claude Code with agent teams support (`TeamCreate`, `Agent`, `SendMessage`, `TaskCreate`). This is an experimental feature — check your Claude Code environment for availability.
-
 ---
 
-## Session Audit Trail
-
-Every session is fully logged by a dedicated Scribe agent (Haiku — lightweight, runs the entire session):
-
-| Log | What It Captures |
-|-----|-----------------|
-| `timeline.log` | Phase progression, agent spawns/shutdowns, key events |
-| `decisions.log` | CEO decisions with rationale — why pipeline was skipped, why a pause was issued |
-| `cross-repo.log` | Every cross-repo communication, impact assessment, and routing decision |
-
-The CEO doesn't waste turns on log formatting. It sends brief event messages to the Scribe; the Scribe handles the rest. Critical events are logged immediately. Routine events are batched to reduce overhead.
-
----
-
-<details>
-<summary><strong>Repo Structure</strong></summary>
+## Layout
 
 ```
-GOAT-CEO/
-├── CLAUDE.md                          ← Repo instructions + agent tooling reference
-├── GOAT-CEO-DESIGN.md                 ← Full design document (function tree, 16 decisions)
-├── repo-registry.json                 ← Persists repos, capabilities, groups across sessions
-├── .claude/
-│   ├── agents/                        ← 8 custom agent type definitions
-│   └── commands/
-│       ├── goat-ceo.md                ← CEO orchestration entry point
-│       ├── goat-ceo/
-│       │   ├── protocols.md           ← Communication flows, error recovery, dashboard
-│       │   └── templates.md           ← 11 agent spawn prompt templates
-│       └── goat-team/
-│           ├── goat.md                ← Full pipeline orchestrator
-│           ├── planner.md             ← Planner role script
-│           ├── codebase-researcher.md ← Codebase researcher role
-│           ├── technical-researcher.md← Technical researcher role
-│           ├── implementer.md         ← Implementer role script
-│           ├── index-updater.md       ← Index updater role
-│           ├── reviewer.md            ← Reviewer role script
-│           └── ...                    ← Plan-only, review-only, index-check variants
-├── specs/                             ← Self-contained bootstrapping specs
-│   ├── indexing-system.md             ← Codebase-Index system spec
-│   ├── tooling-system.md              ← codebase-index-tools CLI spec
-│   └── goat-system.md                 ← GOAT pipeline + agents spec
-└── logs/                              ← Per-session audit trail (gitignored)
-    └── [repo-prefix]/
-        ├── timeline.log
-        ├── decisions.log
-        └── cross-repo.log
+.claude/
+  commands/
+    goat-ceo.md                 # multi-repo CEO entry point
+    goat-ceo/                   # protocols.md, templates.md, rules.md, roster.md, anti-drift.md
+    goat-team/                  # single-repo pipeline skill + role scripts
+  agents/                       # custom subagent definitions (team-overseer, -architect, ...)
+  hooks/                        # the enforcement layer (Python) + autonomous-loop notes
+  settings.json                 # permission deny rules + hook wiring
+specs/                          # self-contained bootstrap specs (index system, tooling, GOAT)
+scripts/autonomous-loop.ps1     # optional Tier-2 outer loop (restart-on-crash)
+agent-workspace/                # per-session artifacts incl. RESUME-STATE.md (gitignored)
+logs/                           # per-session audit trail (gitignored)
 ```
 
-</details>
-
 ---
 
-## Inspiration
+## Credits
 
-GOAT-CEO was directly inspired by [**GSD — Get Shit Done**](https://github.com/gsd-build/get-shit-done), the framework that proved structured, phase-based agent pipelines produce substantially better outcomes than ad-hoc prompting. GSD pioneered the discipline. GOAT-CEO extends it across repository boundaries.
-
-Where GSD coordinates a single repo with precision, GOAT-CEO runs parallel GOAT pipelines across independent repositories — with a single session acting as the informed executive across all of them.
-
----
-
-## Status
-
-GOAT-CEO is **experimental**. It is built specifically for Claude Code's agent teams feature and assumes that capability is available in your environment.
-
-The specs in `specs/` are designed to be self-contained bootstrapping instructions. Point GOAT-CEO at a repo missing the indexing or tooling systems, and it will set them up — either automatically or through the Overseer-driven pipeline.
-
----
-
-<div align="center">
-
-**Your repos have a CEO now.**
-
-Built on the shoulders of [GSD](https://github.com/gsd-build/get-shit-done).
-
-</div>
+Inspired by [GSD — Get Shit Done](https://github.com/gsd-build/get-shit-done), which
+established that structured, phase-based agent pipelines outperform ad-hoc prompting.
+GOAT-CEO extends that idea across repository boundaries and adds a hook-enforced rule layer
+and unattended compaction survival. MIT licensed.
