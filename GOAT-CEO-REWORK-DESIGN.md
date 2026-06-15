@@ -70,8 +70,8 @@ Workflow agents **and** that the agent's role is carried in the hook payload.
 | Gate class | Wired on | Survives Workflow execution? | Migration action |
 |---|---|---|---|
 | Phase order (`check_phase_gate.py`), STOP kill-switch (`check_stop_file.py`), registry role-gate (`guard_registry.py`), commit/push guard (`guard_git_commit.py`) | `PreToolUse` | **YES — verified** (phase gate empirically; others share the same mechanism) | Carry over unchanged |
-| Test gate (`check_test_gate.py`), review gate (`check_review_gate.py`), tool-call audit (`check_toolcall_audit.py`), review-iteration cap | `TaskCompleted` | **NO** — Workflows bypass the Task system (results live in script variables) | Re-express as explicit script stages |
-| Artifact presence (`check_artifacts.py`), partition validity (`check_partition.py`) | `SubagentStop` / `TeammateIdle` | **YES — verified** (2026-06-15 probe: `SubagentStop` fires on Workflow agents and the payload carries `agent_type` plus `agent_transcript_path`) | Carry over unchanged |
+| Test gate (`check_test_gate.py`), review gate (`check_review_gate.py`), review-iteration cap | `TaskCompleted` | **NO** — Workflows bypass the Task system (results live in script variables) | Re-express as explicit script stages |
+| Artifact presence (`check_artifacts.py`), partition validity (`check_partition.py`), reviewer tool-call audit (`check_toolcall_audit.py`) | `SubagentStop` / `TeammateIdle` | **YES — verified** (2026-06-15 probe: `SubagentStop` fires on Workflow agents and the payload carries `agent_type` plus `agent_transcript_path`) | Carry over unchanged |
 | Pipeline-complete (`check_pipeline_complete.py`) | `Stop` (CEO turn) | **YES** — filesystem-based (`*.GATE` + `EXPECTED-GATES.txt`), execution-model independent | Carry over unchanged |
 | Worktree isolation, `maxTurns`, `disallowedTools`, `permissionMode: plan` | frontmatter | **YES** — frontmatter applies however the subagent is spawned | Carry over unchanged |
 
@@ -81,10 +81,11 @@ Workflow agents **and** that the agent's role is carried in the hook payload.
   is *stricter* than the fail-open TaskCompleted hook.
 - **Review gate + iteration cap** → `agent(prompt, {schema: VERDICT})`; the script checks `.verdict==='PASS'`,
   writes `REVIEW.GATE` or increments `REVIEW-ITERATION.txt` / writes `ESCALATE_REQUIRED`.
-- **Tool-call audit** → it inspects a specific subagent's transcript. The 2026-06-15 probe showed the
-  `SubagentStop` payload includes `agent_transcript_path` — so this gate is likely **salvageable** by rewiring
-  it from `TaskCompleted` to a `SubagentStop` hook that reads that path (instead of being lost). Until rewired,
-  the fresh-context adversarial reviewer (templates §12) remains the substantive backstop.
+- **Tool-call audit** → **DONE (2026-06-15):** rewired from `TaskCompleted` to a `SubagentStop` hook that reads
+  the reviewer's OWN `agent_transcript_path` (the probe confirmed the payload carries it). It now fires in both
+  substrates and is *more* precise than before (the old version counted any agent's reads from "the latest
+  session JSONL"). Gates only A/B reviewers — the judge/critic are exempted via the `"reviewer"` verdict marker.
+  Not a casualty after all.
 
 **Verdict:** enforcement *survives* the migration. The scary "enforcement silently evaporates" risk is retired.
 
@@ -162,7 +163,7 @@ free-form prose in `IMPLEMENTATION-MANIFEST.md`, which the integrate stage canno
 |---|---|---|
 | R1 | Loss of the native-Task cross-repo dashboard under Workflow (P4) | Rebuild supervision on `STATUS.md` heartbeats + `claude agents` view; keep Tasks for the cross-repo DAG if a hybrid retains them |
 | R2 | Workflow resumes **within-session only** — weaker crash/compaction survival than today's prose-fallback + PreCompact anchor | Keep the prose state-machine as disaster-recovery (do NOT delete it); phase-boundary checkpointing |
-| R3 | Tool-call audit gate has no clean Workflow home | **Likely salvageable** — rewire from `TaskCompleted` to a `SubagentStop` hook reading the `agent_transcript_path` the 2026-06-15 probe confirmed is in the payload; until then, fresh-context adversarial reviewer + test gate |
+| R3 | ~~Tool-call audit gate has no clean Workflow home~~ **RESOLVED 2026-06-15** | Rewired to a `SubagentStop` hook reading the reviewer's own `agent_transcript_path`; fires in both substrates, gates only A/B reviewers (judge/critic exempt). More precise than the old `TaskCompleted` version |
 | R4 | ~~`SubagentStop` artifact gate firing on Workflow agents is unverified~~ **RESOLVED 2026-06-15** | Probe confirmed `SubagentStop` fires on Workflow agents and carries `agent_type` (+ `agent_transcript_path`). `check_artifacts.py` / `check_partition.py` carry over unchanged |
 | R5 | Partition-quality risk: a bad disjoint partition causes conflicts/rework | Interface freezes + coordinator-owned shared resources + full-suite post-merge; `log()` any partition the architect could not prove disjoint |
 
@@ -211,8 +212,11 @@ avoid drift. This section records the *design intent* behind it:
   skeleton (wrong `agent({subagent_type})` API + `fs`-based gate checks Workflows cannot run).
 - By design, NOT in the script: the §D speculative-MERGE itself stays CEO-manual (single committer, Doctrine
   #1) — the kernel fans out and hands the branch list back; the CEO lands and launches the review kernel.
+- ✅ R3 — rewired the reviewer tool-call audit (`check_toolcall_audit.py`) from `TaskCompleted` to a
+  `SubagentStop` hook reading the reviewer's own `agent_transcript_path`. Works in both substrates, gates only
+  A/B reviewers (judge/critic exempt), tested across pass/block/exempt/role cases.
 - Remaining to make execution fully live: instantiate the kernel against a real target repo + task (the CEO
-  fills `{VARIABLE}`s at Step 3.1); optionally rewire the tool-call audit onto `SubagentStop` (R3).
+  fills `{VARIABLE}`s at Step 3.1).
 
 **Verified facts (2026-06-15, all live probes):**
 - ✅ PreToolUse hooks fire on Workflow agents and carry `agent_type`.
@@ -221,8 +225,7 @@ avoid drift. This section records the *design intent* behind it:
 - ✅ Workflows are non-interactive; `AskUserQuestion` unavailable inside them.
 - ✅ Worktree branches return unmerged; the parent/CEO merges.
 
-**Open items:** whether to retain a Task-based cross-repo DAG in a hybrid (R1); rewiring the tool-call audit
-onto `SubagentStop`/`agent_transcript_path` (R3 — now a build task, not an unknown).
+**Open items:** whether to retain a Task-based cross-repo DAG in a hybrid (R1). (R3 — tool-call audit — done.)
 
 ---
 

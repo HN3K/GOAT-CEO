@@ -398,7 +398,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 - Overseer spawns completeness critic: lightweight haiku agent (`tools: Read, Grep`), parses both verdict blocks, emits JSON list of acceptance criteria unmentioned by any reviewer
 - Overseer spawns judge (opus, `tools: Read` only): reads both verdict blocks + completeness-critic output + Phase-2 single-source findings → emits binding JSON: `{"verdict": "PASS"|"FAIL", "severity": ..., "findings": [...]}`; explicitly prompted to escalate severity on weak/uncited findings
 - `TaskCompleted` hook `check_review_gate.py` VALIDATES the judge JSON (exit 2 unless `"verdict": "PASS"`) and, past the iteration cap (> 2), writes `ESCALATE_REQUIRED`. On PASS the hook allows the task to close and the **CEO writes** `agent-workspace/REVIEW.GATE`. The hook does NOT write `REVIEW.GATE`.
-- `TaskCompleted` hook `check_toolcall_audit.py` counts reviewer Read/Grep/Bash calls — blocks completion if below minimum (a reviewer with no reads is a hallucination vector)
+- `SubagentStop` hook `check_toolcall_audit.py` counts the reviewer's Read/Grep/Bash calls in its own transcript — blocks the reviewer's stop if below minimum (a reviewer with no reads is a hallucination vector). Gates only A/B reviewers; judge/critic exempt
 - CEO confirms gate or handles escalation
 
 **Phase 6 — Verify + Finalize (CEO-direct):**

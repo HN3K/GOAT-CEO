@@ -38,7 +38,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 | Phase gate: implementer cannot Write/Edit/Bash until `RESEARCH.GATE` exists | #3 | **HARD** | `PreToolUse` hook `.claude/hooks/check_phase_gate.py` reading `PHASE-GATES.json` — live |
 | Implementer task cannot close on a failing test suite | #2 | **HARD** | `TaskCompleted` hook `.claude/hooks/check_test_gate.py` runs BROAD suite, exit 2 on non-zero — live |
 | Review task cannot close without a judge `"verdict": "PASS"` JSON | #4 | **HARD** | `TaskCompleted` hook `.claude/hooks/check_review_gate.py`, exit 2 unless PASS — live |
-| Reviewer tool-call audit: minimum file-reads before verdict | #4 | **HARD** | `TaskCompleted` hook `.claude/hooks/check_toolcall_audit.py`, exit 2 if below threshold — live |
+| Reviewer tool-call audit: minimum file-reads before verdict | #4 | **HARD** | `SubagentStop` hook `.claude/hooks/check_toolcall_audit.py` reads the reviewer's OWN `agent_transcript_path`, gates only A/B reviewers (judge/critic exempt via the `"reviewer"` marker), exit 2 if reads < threshold — live. Fires in BOTH the agent-teams and Workflow substrates (rewired from `TaskCompleted`, which was dead under Workflow and counted any agent's reads) |
 | Subagent cannot stop without required artifact | #4 | **HARD** | `SubagentStop` hook `.claude/hooks/check_artifacts.py`, per agent-type check — live |
 | Partition manifest valid (independent batches file-disjoint, refs resolve) before research gate | #5 | **HARD** | `SubagentStop` hook `.claude/hooks/check_partition.py` blocks the architect's stop on an invalid `IMPLEMENTATION-MANIFEST.json`; CEO also runs it as a CLI at the research gate — live. Fail-open on internal error; absent manifest = allow (single-batch runs) |
 | CEO cannot declare pipeline done while any `*.GATE` missing or `ESCALATE_REQUIRED` set | #2 | **HARD** | `Stop` hook `.claude/hooks/check_pipeline_complete.py`, exit 2 with missing gate names — live |
@@ -90,7 +90,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 - `TaskCompleted` hook `.claude/hooks/check_test_gate.py` — runs the BROAD suite; exit 2 on non-zero. The implementer task cannot close until the real suite passes. **(HARD — hook live)**
 - Phase 6: CEO runs the broad suite itself, independently of the implementer's claim. If the CEO's run fails after the implementer's succeeded, that is a red flag for cwd or branch mismatch — investigate before proceeding. (SOFT — CEO discipline)
 - `.claude/hooks/check_review_gate.py` parses the judge's JSON `"verdict"` field. A review that does not produce valid JSON with `"verdict": "PASS"` cannot close. **(HARD — hook live)**
-- `.claude/hooks/check_toolcall_audit.py` counts reviewer `Read`/`Grep`/`Bash` calls in the session transcript. A reviewer who issued a verdict without reading implementation files is a hallucination vector — the hook exits 2. **(HARD — hook live)**
+- `.claude/hooks/check_toolcall_audit.py` (a `SubagentStop` hook) counts the reviewer's `Read`/`Grep`/`Bash` calls in its OWN transcript (`agent_transcript_path`). A reviewer who issued a verdict without reading implementation files is a hallucination vector — the hook exits 2 and blocks the stop. Only A/B reviewers are gated; the judge/critic are exempt. **(HARD — hook live)**
 
 ---
 

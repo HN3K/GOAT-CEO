@@ -88,6 +88,10 @@
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_partition.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_toolcall_audit.py\""
           }
         ]
       }
@@ -114,10 +118,6 @@
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_review_gate.py\""
-          },
-          {
-            "type": "command",
-            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_toolcall_audit.py\""
           }
         ]
       }

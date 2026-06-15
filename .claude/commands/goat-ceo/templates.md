@@ -479,7 +479,7 @@ BEFORE writing your verdict:
   what they ran. Run something different — a broader test, a different data path, an integration.)
 - You MUST cite file:line for every claim. "Tests pass" without naming which test = a hallucination.
 - You MUST read every file listed in agent-workspace/IMPLEMENTATION-MANIFEST.md.
-  The tool-call audit hook will count your Read/Grep/Bash calls — insufficient reads = hook blocks your verdict.
+  The tool-call audit (a SubagentStop hook) counts your Read/Grep/Bash calls in your own transcript — insufficient reads = you cannot end your turn until you read more.
 
 CHECKPOINT-AND-YIELD CONTRACT (Doctrine §E):
 - Do ONE bounded unit (one acceptance criterion area). Report + YIELD.
@@ -825,8 +825,8 @@ const judged = await agent(
     order/length, escalate severity on weak/uncited evidence.]`,
   { label: 'review:judge', agentType: 'team-verifier', model: 'opus', schema: VERDICT })
 // Gate-as-stage: check_review_gate.py (TaskCompleted) does NOT fire for Workflow agents, so the verdict
-// gates the result HERE. check_toolcall_audit can be re-added as a SubagentStop hook reading
-// agent_transcript_path (GOAT-CEO-REWORK-DESIGN.md §B / R3).
+// gates the result HERE. The reviewer read-audit (check_toolcall_audit) IS wired as a SubagentStop
+// hook reading agent_transcript_path, so it still enforces on reviewers A/B in this substrate.
 if (!judged || judged.verdict !== 'PASS') {
   return { ready: 'escalate', verdict: judged ? judged.verdict : 'NONE', findings: judged ? judged.findings : [] }
 }
