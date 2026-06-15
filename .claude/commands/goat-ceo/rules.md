@@ -40,6 +40,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 | Review task cannot close without a judge `"verdict": "PASS"` JSON | #4 | **HARD** | `TaskCompleted` hook `.claude/hooks/check_review_gate.py`, exit 2 unless PASS — live |
 | Reviewer tool-call audit: minimum file-reads before verdict | #4 | **HARD** | `TaskCompleted` hook `.claude/hooks/check_toolcall_audit.py`, exit 2 if below threshold — live |
 | Subagent cannot stop without required artifact | #4 | **HARD** | `SubagentStop` hook `.claude/hooks/check_artifacts.py`, per agent-type check — live |
+| Partition manifest valid (independent batches file-disjoint, refs resolve) before research gate | #5 | **HARD** | `SubagentStop` hook `.claude/hooks/check_partition.py` blocks the architect's stop on an invalid `IMPLEMENTATION-MANIFEST.json`; CEO also runs it as a CLI at the research gate — live. Fail-open on internal error; absent manifest = allow (single-batch runs) |
 | CEO cannot declare pipeline done while any `*.GATE` missing or `ESCALATE_REQUIRED` set | #2 | **HARD** | `Stop` hook `.claude/hooks/check_pipeline_complete.py`, exit 2 with missing gate names — live |
 | Parallel implementers run in isolated worktrees, not shared cwd | #5 | **HARD** | `isolation: worktree` in `team-implementer.md` frontmatter — applied |
 | Implementers cannot spawn sub-subagents without CEO authorization | #6 | **HARD** | `disallowedTools: Agent` in `team-implementer.md` frontmatter — applied |

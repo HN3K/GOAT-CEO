@@ -145,7 +145,7 @@ The architect (`team-architect`) runs as a teammate in plan mode. After the arch
 - CEO action: after `check_artifacts.py` passes (task closes), **CEO explicitly writes `agent-workspace/PLAN.GATE`** to advance the pipeline, then spawns researchers.
 
 **Research → Implement (RESEARCH.GATE write):**
-- CEO (or overseer) verifies the 5-condition AND-gate: both researchers at 0 open issues, all ISSUE-TRACKER.md items resolved or dismissed, no plan gaps, every step has an executable command, BOTH `IMPLEMENTATION-MANIFEST.md` AND `IMPLEMENTATION-MANIFEST.json` exist (the `.json` must parse and its independent batches must have disjoint `files[]` — see §D). On pass, CEO writes `RESEARCH.GATE`.
+- CEO (or overseer) verifies the 5-condition AND-gate: both researchers at 0 open issues, all ISSUE-TRACKER.md items resolved or dismissed, no plan gaps, every step has an executable command, BOTH `IMPLEMENTATION-MANIFEST.md` AND `IMPLEMENTATION-MANIFEST.json` exist. The CEO confirms the partition with `python .claude/hooks/check_partition.py` (exit 0 = valid; independent batches are file-disjoint, blockedBy refs resolve). The same validator also runs as a `SubagentStop` gate on the architect, so an invalid partition blocks the architect's stop. On pass, CEO writes `RESEARCH.GATE`.
 - CEO action: spawn implementers (with worktree isolation if parallel).
 
 **Implement → Index (IMPLEMENT.GATE write):**

@@ -197,6 +197,16 @@ avoid drift. This section records the *design intent* behind it:
    as stages; prove the end-to-end pattern before broad rollout.
 4. **Keep the prose fallback** as disaster-recovery (R2).
 
+**Landed (this session, 2026-06-15):**
+- ✅ Step 1 — Decision-B **doctrine**: the `IMPLEMENTATION-MANIFEST.json` schema + the speculative-batch
+  reconvergence procedure are in `protocols.md §D`; the architect emits the partition (`templates.md §5`);
+  the research gate requires it (`protocols.md`/`goat-ceo.md`); `rules.md` Rule 5 and the overseer wire to it.
+- ✅ Step 1 — Decision-B **enforcement**: `.claude/hooks/check_partition.py` validates disjointness — a
+  `SubagentStop` gate on the architect (blocks an invalid partition) and a CLI the CEO runs at the research
+  gate. Tested across valid / overlapping / dangling-ref / hook-role cases.
+- Still pending in Decision B: the *executable* speculative-merge stage itself (today the §D procedure is
+  CEO-followed prose; under Decision A it becomes a Workflow pipeline stage).
+
 **Verified facts (2026-06-15):**
 - ✅ PreToolUse hooks fire on Workflow agents and carry `agent_type` (live probe).
 - ✅ Workflows bypass the Task system → `TaskCompleted` gates do not fire (docs + design).

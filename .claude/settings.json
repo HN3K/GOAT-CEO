@@ -84,6 +84,10 @@
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_artifacts.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_partition.py\""
           }
         ]
       }
