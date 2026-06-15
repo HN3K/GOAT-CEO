@@ -32,6 +32,7 @@ updates. When in doubt, prefer a native primitive over a bespoke one.
 | P10 | Plan-mode approval | Native teammate plan-approval primitive | The Phase 1→2 gate — architect cannot write until the CEO approves its plan | A prose "wait for my OK" |
 | P11 | MCP tools | Surfaced via `ToolSearch` (deferred tools), schemas loaded on demand | Per-agent access to session-connected MCP servers | Re-implementing an integration the MCP server already provides |
 | P12 | Memory | `memory: project` frontmatter; file-based memory dir | Cross-session persistence of decisions/state | An ad-hoc state file no primitive reads |
+| P13 | External standards-grounding CLI (`rubric`) — **optional, opt-in per repo** | The `rubric` console-script CLI (deterministic surface: `context`, `check`/`enforce --no-llm`, `index`, `measure`), run as a HOST tool against any target repo | Ground implementers in conventions + symbol-level reuse before they write, and gate convention drift deterministically at integration — the standards/reuse layer GOAT-CEO otherwise lacks. **Cleared composition** (Rule 7): rubric wraps ast/ast-grep/Ruff/ESLint and owns a two-plane KB; it does NOT duplicate the Codebase-Index (different plane) and is used via its CLI only. Its own Claude Code hooks / `claude -p` LLM path are NOT used in-pipeline. See §I. | Re-implementing a linter/standards-enforcement layer by hand; hand-rolling a conventions KB |
 
 **Retired hand-rolled mechanisms** (removed because a native primitive covers them — do not reintroduce):
 - **Scribe logger** (`team-ceo-scribe`) → the `claude agents` view + OTEL timeline cover observability natively (P2/P3). Tier-2 cross-repo decisions are logged directly by the CEO to `logs/<prefix>/cross-repo.log`.
@@ -238,3 +239,114 @@ steering mechanisms), and a file-grounded migration impact map. Confidence is hi
 reviewed or empirically probed (the enforcement-survival result, the Amdahl ceiling, the selection gap) and lower
 where they rest on vendor documentation (specific autonomy-telemetry figures). Where a claim is vendor-sourced it
 is treated as directional, not load-bearing.
+
+---
+
+## §I — Optional integration: `rubric` standards-grounding (RUBRIC-AVAILABLE)
+
+> **Status:** design of record (2026-06-15). **Not yet built.** Primitive ledger: P13. Source project:
+> `C:\Users\hnthr\source\KadenSeriousProjects\rubric` (pin a commit before depending on it — built 2026-06-14/15,
+> zero soak). Backed by a 4-agent analysis pass (capability/CLI contracts, integration-point mapping,
+> overlap/merge design, readiness/orchestration-fit).
+
+`rubric` is a Claude Code-native standards system: a two-plane KB (portable **conventions/exemplars** + per-repo
+**symbol-level reuse catalog** via `ast`), a deterministic blocking gate (ast-grep/Ruff/ESLint), an adversarially-
+verified advisory review, and a codify loop. It fills GOAT-CEO's clearest gap: GOAT-CEO guarantees *tests pass* and
+*review happened*, but nothing grounds implementers in house conventions + reusable components before they write,
+and nothing blocks convention drift. rubric is the **optional, opt-in per-repo** capability that does, modeled on
+the existing `INDEX-AVAILABLE` pattern. It honors Rule 7 (compose, don't rebuild) and is cleared as P13.
+
+### §I.1 — Six load-bearing decisions (the safe shape)
+
+The naive "bolt rubric's full pipeline into Phase 5" double-pays for adversarial review, risks verdict collisions,
+and can blow the implementer's `maxTurns` on self-heal thrash. The adopted shape avoids all three:
+
+1. **Deterministic surface only, in-pipeline.** Use `rubric context` (grounding), `rubric check` / `enforce --no-llm`
+   (gate), `rubric index` (reuse catalog), `rubric measure` — all **free, zero LLM calls**. Do NOT run rubric's
+   `--verify` ensemble or its `claude -p` path in-pipeline (the seed KB has 0 LLM-rules, so this adds zero
+   mandatory LLM cost). Any LLM standards-review (v2) runs via GOAT-CEO's own `team-verifier` reading the KB, not
+   rubric's `claude -p` (avoids Claude-in-Claude nesting + invisible subscription billing).
+2. **rubric is a HOST tool, not a per-repo dependency.** Install once in the operator/CEO env
+   (`pipx install rubric[gate,retrieval]`); invoke `rubric <cmd> --repo <target> --kb <portable-kb>` against any
+   target repo. Resolves the Python-only problem — rubric is never added to a Node repo's toolchain; the
+   conventions/exemplars plane is language-agnostic.
+3. **Merge retrieval into the ONE existing grounding artifact.** The planes are genuinely disjoint: Codebase-Index
+   = architectural map + task routing (the "where"); rubric = symbol signatures + conventions + exemplars (the
+   "what to call / how"). The Planner appends `rubric context`'s three sections to the single
+   `agent-workspace/index-context.md` it already writes in Phase 1. No competing second grounding path.
+4. **rubric is a lens feeding the judge, never a parallel verdict.** Its *blocking gate* = a deterministic FAIL
+   fact (like the test gate); its *advisory* output = unverified input the judge weighs. GOAT-CEO's judge stays the
+   single binding verdict (`check_review_gate.py`); rubric never writes to the gate-read verdict slot.
+5. **No rubric Claude Code hooks in GOAT-CEO repos** — bootstrap with `rubric init --no-claude` (installs `.rubric/`
+   + git pre-commit + the reuse index, but NOT rubric's SessionStart/`/rubric`/PostToolUse hooks, which would be a
+   second grounding path + double-inject). The CEO runs `rubric check --changed` as a **deterministic gate step at
+   integration** (`RUBRIC.GATE`), NOT as a real-time PostToolUse self-heal hook — which sidesteps the single sharpest
+   risk (R-A below).
+6. **Primitive-Ledger entry first.** Adopting rubric without a cleared §0 row would violate Rule 7's *procedure*
+   even though it honors its spirit. P13 is that row.
+
+### §I.2 — Integration map (a clean `INDEX-AVAILABLE` mirror)
+
+| # | Where | Change | INDEX analog |
+|---|---|---|---|
+| 1 | `repo-registry.json` + `goat-ceo.md §1.1` schema | add `"rubric": true\|false` + `"rubricStatus": "RUBRIC-AVAILABLE"\|"RUBRIC-UNAVAILABLE"`; optional `"rubricConventions": "<shared-kb-path>"` for cross-repo standards sharing (no INDEX analog) | `index`/`tooling` booleans + `indexStatus` |
+| 2 | `goat-ceo.md §1.2` intake | detect `.rubric/` + `rubric kb` responds → record status; bootstrap offer A/B/C where A = `rubric init --no-claude`. `ro-reference` repos are EXEMPT | the Codebase-Index detect + A/B/C bootstrap |
+| 3 | `templates.md` §6/§7/§8 | add a `{RUBRIC_STATUS}` block: when AVAILABLE, Planner-pulled `rubric context` grounding is in the shared artifact; implementers also run `rubric check <changed>` before reporting complete | the `{INDEX_STATUS}` block |
+| 4 | `protocols.md §D` / `goat-ceo.md` Phase 3→4 | `RUBRIC.GATE` — CEO runs `rubric check --changed` (or `enforce --no-llm`) on the merged diff; exit 0 → write the gate. Add to `EXPECTED-GATES.txt` ONLY for waves with ≥1 RUBRIC-AVAILABLE repo (else the Stop hook blocks on an absent optional gate). Under Workflow: a `TaskCompleted` rubric hook would NOT fire → express as a script stage (`run rubric check; throw on non-zero`), exactly like the test gate | `INDEX.GATE` (CEO-validated, no hook) — but rubric's is HARD (deterministic exit code) where INDEX's is SOFT |
+| 5 | `goat-ceo.md` Phase 6 / Session Summary | `rubric measure --save` baseline at wave start; `--baseline` delta in the finalize report (gate-pass, complexity, SLOC) | none (net-new reporting surface) |
+| 6 | `rules.md` (Rule 8/new Rule 9 + 2 HARD/SOFT rows), `roster.md` (Reviewer-C row, v2), §0/§B/§E here | doctrine rows for the grounding (SOFT) + gate (HARD, opt-in/target-repo) | Rule 8 + the index HARD/SOFT rows |
+
+**Divergences from INDEX to honor:** (a) console script `rubric <cmd>`, NOT `python -m … --format json`; (b) **no
+`--format json`** anywhere — parse stdout text or read the JSON files rubric writes (`measure --save`, `index`,
+`codify --write`); (c) after `init`, pass `--kb .rubric/kb` on every call; (d) only `check`/`enforce` return
+non-zero on violation; (e) a v2 rubric-reviewer must be EXEMPT from `check_toolcall_audit` (its evidence is a
+subprocess, not Read calls).
+
+### §I.3 — The complementary grounding merge (one artifact, fixed order)
+
+```
+agent-workspace/index-context.md   (written ONCE by the Planner in Phase 1; read-only downstream)
+├─ § Architectural map & task routing      ← codebase-index `inject --ids <planner-selected>`   (the "where")
+├─ § Existing components — REUSE these      ← rubric context  → ## Existing components            (symbol signatures)
+├─ § Conventions to follow (MUST/should)    ← rubric context  → ## Conventions
+└─ § Canonical exemplars — match this style ← rubric context  → ## Canonical exemplars
+```
+
+Path-string dedup: rubric is authoritative for **signatures**, codebase-index for **purpose/architecture**; never
+print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components ≤600, conventions ≤300, exemplars ≤900
+(truncate exemplars first). Degraded modes: both-absent → direct Read/Grep (today's `INDEX-UNAVAILABLE`); one-absent
+→ the present half only. rubric's own context/SessionStart hooks are disabled so this stays the sole grounding path.
+
+### §I.4 — Scope: v1 (build) vs v2 (defer)
+
+- **v1 (safe, deterministic, zero added LLM cost):** P13 ledger row + RUBRIC-AVAILABLE registry flag + intake
+  detection/bootstrap + Planner grounding-merge + CEO-run `RUBRIC.GATE` + `measure` deltas + doctrine rows.
+  Delivers the full "ground before write, gate before merge" loop with zero self-heal risk.
+- **v2 (defer):** the LLM standards-review lens (run via GOAT's own `team-verifier` reading the KB — Reviewer C,
+  feeding the judge as advisory; gate failures as facts); the native PostToolUse self-heal gate (needs a per-file
+  heal-cap wrapper rubric lacks today, to fit inside `maxTurns:30`); the `codify --draft` loop surfaced to the
+  operator at session close; cross-repo portable-conventions sharing via `rubricConventions`.
+
+### §I.5 — Caveats & top risks
+
+- **Node coverage is partial:** rubric gives Node repos a gate (ast-grep + ESLint-via-`.rubric/tools.json` config)
+  and language-agnostic conventions/exemplars, but **no symbol-level reuse index** (Python-only today). Full value
+  on Python; partial on Node. Honest framing required in the docs.
+- **Seed KB is TS-first** → target repos must supply their own KB to get real value; rubric ships the mechanism,
+  not your standards.
+- **2 days old, zero soak** → pin a commit; depend on the stable CLI surface, not the hook bridge.
+
+| Risk | Mitigation |
+|---|---|
+| **R-A: self-heal loop blows `maxTurns:30`.** rubric's PostToolUse gate exits 2 → model re-edits → re-fires; on an un-satisfiable rule the implementer thrashes, trips the turn budget, dies mid-batch, then `check_artifacts` blocks its stop → escalation cascade. | v1 does NOT install rubric's PostToolUse hook in-pipeline; the gate runs as a CEO deterministic step at integration. v2's native gate needs a per-file heal cap (≤2 cycles, then degrade to advisory). |
+| **R-B: two adversarial-verify stacks → cost blowup + verdict collision.** | Run rubric WITHOUT `--verify` in-pipeline; rubric Review = advisory lens, rubric Gate = fact; GOAT-CEO's judge is the single skeptic. |
+| **R-C: Python-only rubric on a Node repo / not on PATH.** | Host-tool install (decision 2); record RUBRIC-AVAILABLE per repo; degrade gracefully. |
+| **R-D: KB / reuse-catalog staleness surfaces phantom symbols.** | Grounding artifact built once at Phase 1 (read-only that run); re-run `rubric index` in the Phase-4 index-update step so the catalog refreshes with the markdown indexes. |
+| **R-E: version coupling (rubric v0.0.1 + harness hook semantics).** | Pin rubric; keep its hooks OUT of GOAT-CEO sessions (`init --no-claude`); depend only on the CLI surface. Both systems fail-open, so a contract break degrades to no-op. |
+
+### §I.6 — Open decisions before building v1
+
+- Confirm the **host-tool install** model (vs per-repo) is acceptable operationally.
+- Confirm `RUBRIC.GATE` is **conditional** (only added to `EXPECTED-GATES.txt` for waves with a RUBRIC-AVAILABLE
+  repo) so the Stop hook never blocks on an absent optional gate.
+- Whether v1 ships the `measure` deltas or defers them with the rest of the reporting polish.
