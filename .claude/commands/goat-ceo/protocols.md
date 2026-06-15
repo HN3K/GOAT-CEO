@@ -258,7 +258,7 @@ When parallel implementers complete their worktree branches, the CEO integrates 
 
 ### Forced shutdown (operator STOP only)
 
-> Context pressure is NOT a forced-shutdown trigger. This path fires only on an operator `STOP` file or a genuine terminal escalation — never because the window is filling. For low context, see "Context-limit approach" below: you persevere through compaction, you do not shut down.
+> Context pressure is NOT a forced-shutdown trigger. This path fires only on an operator `STOP` file or a genuine terminal escalation — never because the window is filling. For low context, see "Context-limit approach" below — compaction is lossless and is not a shutdown trigger.
 
 1. CEO writes `agent-workspace/STOP` immediately (halts all agent tool calls at their next boundary).
 2. CEO writes `agent-workspace/MISSION.md` with CURRENT STATE block: phase reached, which sentinels exist, which agents were running (names + last STATUS.md entry), which tasks were open, what the next action should be.
@@ -266,16 +266,13 @@ When parallel implementers complete their worktree branches, the CEO integrates 
 4. CEO writes a final STATUS.md entry: `[ISO_TIMESTAMP] CEO SESSION_END phase=<N> reason=forced next=<action>`.
 5. CEO response to operator: concise state summary referencing `MISSION.md` path and the next-action line.
 
-### Context-limit approach (PERSEVERE — do not stop) — see anti-drift §9
+### Context-limit approach (mode-dependent)
 
-**Low context is NOT a stop condition.** Auto-compaction in this harness is automatic, silent, and made lossless by the survival loop (`check_precompact.py` self-heals the resume anchor before the prune; `inject_handoff_context.py` re-injects it after, async:false). When the CEO's window fills:
+Auto-compaction in this harness is automatic, silent, and lossless — it is **not** a shutdown trigger in either mode.
 
-1. **Keep working.** Do NOT pause, write a "handoff and wait", spawn a "fresh CEO continuation", or ask the operator to `/resume`. The compaction happens transparently under you and you continue on the other side. (The old "self-detect and spawn a fresh continuation" instruction is removed — it caused unnecessary halts.)
-2. **Stay lean so compactions are rare and clean:** delegate all verbose work to subagents (each has its own context window), keep your own turns short, never read large files yourself. Your durable memory is files + git (`RESUME-STATE.md`, `agent-workspace/`, `*.GATE`, `MISSION.md`), not your context.
-3. **After a compaction, resume — don't re-plan.** Read the re-injected `RESUME-STATE.md`, verify its machine block against `git` + `*.GATE` (Doctrine #2), then continue the single `NEXT_ACTION`. Do not re-derive completed phases or re-summarize the session.
-4. **The only stops** are the operator `STOP` file, `ESCALATE_REQUIRED`, genuine mission completion, or a decision that truly needs the operator. Context pressure is none of these.
+**Collaborative (default):** when your window fills, keep working — stay lean (delegate verbose work to subagents, keep your turns short, never read large files yourself) and treat files + git (`RESUME-STATE.md`, `agent-workspace/`, `*.GATE`, `MISSION.md`) as your durable memory. After a compaction, resume: read the re-injected `RESUME-STATE.md`, verify its machine block against `git` + `*.GATE`, then continue the single `NEXT_ACTION` — do not re-plan or re-derive completed phases. You still yield to the operator at phase boundaries (that's the default).
 
-For crash resilience beyond a single session (process death, not just compaction), the optional outer loop `scripts/autonomous-loop.ps1` restarts the session and the SessionStart hook re-grounds the CEO from the anchor. See anti-drift §9d.
+**Unattended (opt-in):** the keep-going survival layer additionally prevents the CEO from yielding *between* turns, so an unattended run continues across compaction with no human present. Engage it only for genuinely unattended runs, after intake. For perseverance discipline, the outer-loop wrapper (`scripts/autonomous-loop.ps1`, process-death resilience), and the resume-anchor schema, see `unattended-mode.md` (§3–§5).
 
 ---
 

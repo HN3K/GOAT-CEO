@@ -172,8 +172,9 @@ _STUB_BODY = (
     "PHASE:        (infer from GATES_PRESENT above; CEO to set)\n"
     "TASKS:        (CEO to snapshot from TaskList)\n"
     "NEXT_ACTION:  reconstruct from PHASE + GATES_PRESENT; read agent-workspace/STATUS.md tail\n"
-    "              and the DIAGNOSIS_DOCS above, then resume the pipeline. Do NOT stop for the\n"
-    "              operator — auto-compaction is transparent; persevere (anti-drift §9).\n"
+    "              and the DIAGNOSIS_DOCS above, then resume the pipeline. Auto-compaction is\n"
+    "              transparent and lossless; continue the current phase. (Unattended runs:\n"
+    "              never-stop behavior is opt-in — see commands/goat-ceo/unattended-mode.md.)\n"
 )
 
 

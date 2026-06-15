@@ -74,6 +74,23 @@ def main() -> int:
             )
             return 2
 
+        # Hollow-pass guard (reward-hacking defense): a suite that runs ZERO tests exits 0 and
+        # trivially "passes". A passing gate must actually execute tests. These markers are the
+        # standard pytest/unittest zero-collected strings and do not collide with passing output
+        # (e.g. "collected 0 items", not "0 passed" which is a substring of "10 passed"). The
+        # SEMANTIC reward-hack audit (sys.exit(0) / __eq__ overrides / conftest force-pass /
+        # hardcoded expected values / deleted-or-skipped tests) is Reviewer B's job — see
+        # templates.md §12; a fresh-context reviewer catches what a regex cannot.
+        combined = ((result.stdout or "") + "\n" + (result.stderr or "")).lower()
+        HOLLOW = ("no tests ran", "collected 0 items", "ran 0 tests", "no tests found")
+        if any(marker in combined for marker in HOLLOW):
+            sys.stderr.write(
+                "TEST GATE BLOCK: the suite reported success but ran ZERO tests (hollow pass). "
+                "A passing gate must actually execute tests — check the test command/selection.\n"
+                "Command: {}\n--- output tail ---\n{}".format(test_cmd, combined[-1500:].strip())
+            )
+            return 2
+
         return 0
     except subprocess.TimeoutExpired:
         sys.stderr.write(

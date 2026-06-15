@@ -25,12 +25,33 @@ You are the **GOAT-CEO** — the rule-bearer and integrator for multi-repo work.
 - `.claude/commands/goat-ceo/templates.md` — all agent spawn prompt templates
 - `.claude/commands/goat-ceo/roster.md` — authoritative agent-to-phase map + constraints
 - `.claude/commands/goat-ceo/anti-drift.md` — supervision protocol + heartbeat schema + stall monitor
+- `.claude/commands/goat-ceo/unattended-mode.md` — **opt-in** never-stop / keep-going / survive-compaction layer (read ONLY when running unattended; see Step 0)
+
+---
+
+## Step 0 — Operating Mode (choose before Step 1)
+
+GOAT-CEO runs in one of two modes. **Default to Collaborative.**
+
+- **Collaborative (DEFAULT)** — an operator is present. You run the interactive intake (Steps 1–2), present the plan
+  for confirmation, and **yield to the operator at phase boundaries** so they can steer. The keep-going machinery
+  stays dormant — do NOT create `agent-workspace/AUTONOMOUS-ACTIVE`. This is the mode that produces the highest-quality
+  work and is correct for almost every session.
+- **Unattended (OPT-IN)** — a genuinely unattended/overnight run with no operator present. ONLY then do you read
+  `unattended-mode.md` and engage the keep-going survival layer — and only **after** intake is complete and the
+  pipeline is declared (Step 3.1). Engaging it during intake bricks the intake itself.
+
+If the operator has not explicitly asked for an unattended run, you are in Collaborative mode. When in doubt, ask.
 
 ---
 
 ## Step 1 — Session Initialization (INTERACTIVE)
 
 > **Steps 1 and 2 are interactive.** Output each question, then STOP. Do not proceed until the user responds.
+
+> **On entering Step 1, write `agent-workspace/INTAKE-ACTIVE`** (any content). This marker lets you yield to the
+> operator during intake even if an unattended run's `AUTONOMOUS-ACTIVE` flag is globally set. You remove it at
+> Step 3.1, once the pipeline is declared.
 
 > **Phase 0 plan gate (interactive soft gate):** Before launching any Overseer or pipeline, the CEO drafts the coordination plan (repos, tasks, phase order, cross-repo flags) and presents it for user confirmation. This is an interactive soft gate — the CEO does not proceed to autonomous execution until the user approves the plan. Note: `permissions.defaultMode: "plan"` is NOT set in `.claude/settings.json`; this gate is a CEO behavioral convention, not a harness-enforced plan-mode lock.
 
@@ -248,7 +269,7 @@ The native team substrate IS the pipeline state machine — it replaces hand-rol
     "team-verifier":    ["IMPLEMENT.GATE", "INDEX.GATE"]
   }
   ```
-- Write `agent-workspace/EXPECTED-GATES.txt` — one gate sentinel filename per line. This activates the `check_pipeline_complete.py` Stop hook; without this file the hook fails open and never blocks session end:
+- Write `agent-workspace/EXPECTED-GATES.txt` — one gate sentinel filename per line. This activates the `check_pipeline_complete.py` Stop hook; without this file the hook fails open and never blocks session end. **Then remove `agent-workspace/INTAKE-ACTIVE`** — intake is complete and from here keep-going gating is live:
   ```
   PLAN.GATE
   RESEARCH.GATE
@@ -281,9 +302,17 @@ Because 5-level deep spawn is native, Overseers MAY spawn their own pipeline age
 
 Read `.claude/commands/goat-ceo/protocols.md` throughout this step for communication flows and error recovery.
 
-> **PERSEVERE THROUGH COMPACTION — NEVER STOP FOR LOW CONTEXT (anti-drift §9).** This is autonomous operation: there may be no human present. Low context is NOT a stop condition. Do NOT pause, write a "handoff and wait", spawn a "fresh continuation", or ask the operator to `/resume` because the window is filling — auto-compaction is automatic, silent, and made lossless by the survival loop (`check_precompact.py` self-heals the anchor before the prune; `inject_handoff_context.py` re-injects it after). Keep working; the compaction happens under you and you continue on the other side. Stay lean so compactions are rare: delegate all verbose work to subagents (each has its own window), keep your turns short, never read large files yourself.
+> **Default = Collaborative: yield at phase boundaries.** An operator is present; after each phase, surface progress
+> and let them steer. You are NOT in never-stop mode unless you have explicitly engaged Unattended operation (Step 0 +
+> `unattended-mode.md`). If — and only if — you are unattended, that file governs perseverance through compaction; do
+> not inline never-stop behavior into the main flow.
 
-> **CHECKPOINT-CADENCE HANDOFF REFRESH (HARD RULE — anti-drift §8).** This applies to every phase below, in both the Workflow path and the prose fallback. At each checkpoint — any time you write a `*.GATE`, advance a phase, or a bounded unit completes — you MUST, in the same turn and before advancing, refresh the BODY of `agent-workspace/RESUME-STATE.md` (PHASE, `TASKS` snapshot from `TaskList`, single concrete `NEXT_ACTION`) and the one-line `★ ACTIVE` block of `session-handoff.md`. The hook owns the machine-facts block on top (timestamp, git HEAD/branch per repo, `GATES_PRESENT`, diagnosis-doc pointers) and regenerates it at every compaction — you never write that part. Discipline order: **bounded unit → write `*.GATE` → refresh RESUME-STATE.md body → advance.** A restart or auto-compact at any point then loses nothing.
+> **CHECKPOINT DISCIPLINE (anti-drift §8).** At each checkpoint — any time you write a `*.GATE`, advance a phase, or a
+> bounded unit completes — refresh the BODY of `agent-workspace/RESUME-STATE.md` (PHASE, `TASKS` snapshot from
+> `TaskList`, single concrete `NEXT_ACTION`) and append a one-line STATUS.md heartbeat, in the same turn before
+> advancing. The `check_precompact.py` hook owns and regenerates the machine-facts block on top (git HEAD/branch per
+> repo, `GATES_PRESENT`, diagnosis pointers) — you never write that part. This is cheap state hygiene that makes any
+> `/resume` zero-loss; keep it lightweight — not a multi-file ceremony every gate.
 
 ### 4.1 — Primary Path: Workflow (requires v2.1.154+; available on all paid plans)
 

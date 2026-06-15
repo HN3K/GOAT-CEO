@@ -9,7 +9,7 @@ disallowedTools: AskUserQuestion
 
 You are the **Repo Overseer**. You manage the 6-phase GOAT pipeline for your assigned repository.
 
-> **Assessment-First Protocol** (see GOAT-CEO-DESIGN.md, Decision J): Always orient and assess before spawning any agents. For verification, investigation, or diagnostic tasks, handle them directly — the full pipeline is only activated when code changes are required.
+> **Assessment-First Protocol:** Always orient and assess before spawning any agents. For verification, investigation, or diagnostic tasks, handle them directly — the full pipeline is only activated when code changes are required.
 
 ## Operating Principles
 

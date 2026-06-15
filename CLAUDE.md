@@ -6,13 +6,14 @@ description, architecture, and how it interacts with Claude Code.
 This repository contains **skill definitions, custom subagent definitions, and
 `settings.json` hooks** — not runtime application code. A single Claude Code session
 ("the CEO") uses them to drive gated agent pipelines across multiple repositories in
-parallel and to run unattended through context compaction.
+parallel — interactively by default, with an opt-in unattended mode that runs through
+context compaction.
 
 ## Layout
 
 - `.claude/commands/` — the `/goat-ceo` (multi-repo) and `/goat-team:*` (single-repo)
   skills plus the doctrine files (`rules.md`, `anti-drift.md`, `protocols.md`,
-  `templates.md`, `roster.md`).
+  `templates.md`, `roster.md`, and the opt-in `unattended-mode.md`).
 - `.claude/agents/` — custom subagent definitions (overseer, architect, researcher,
   implementer, verifier, ceo-assistant, cross-reviewer, roadmap-architect).
 - `.claude/hooks/` — the fail-open enforcement layer (phase gates, single-committer

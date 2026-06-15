@@ -2,7 +2,7 @@
 
 Tasks in the GOAT-CEO pipeline MUST follow the convention:
     "{repo}: Phase {N} — {name}"
-e.g. "IntelligenceService: Phase 3 — Implement analytics endpoints"
+e.g. "auth-service: Phase 3 — Implement analytics endpoints"
 
 This ensures the CEO can parse the shared task list reliably.
 

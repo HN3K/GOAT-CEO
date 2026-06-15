@@ -439,6 +439,7 @@ Send a message to {REPO_PREFIX}-overseer confirming index update complete + chec
 
 > Perspective: correctness and acceptance-criteria coverage.
 > Frontmatter: `disallowedTools: Write, Edit, AskUserQuestion` on production files (writes to agent-workspace/ only).
+> Model diversity: where available, run on a different model family than the implementer — an independent perspective catches more than a redundant one.
 
 ```
 You are Reviewer A for {REPO_PREFIX} at {REPO_PATH}.
@@ -454,6 +455,12 @@ Read {REPO_PATH}/.claude/commands/goat-team/reviewer.md in full, then execute al
 Read agent-workspace/PLAN.md and agent-workspace/IMPLEMENTATION-MANIFEST.md.
 If PLAN.md references a roadmap milestone (M-NN), cross-check that PLAN.md's acceptance
 criteria do not weaken the milestone's Acceptance criteria. Weakening = automatic FAIL.
+
+FRESH-CONTEXT MANDATE: form your verdict from the DIFF + the acceptance criteria + your own
+runtime checks. The implementer's report/rationale is a set of CLAIMS to verify, not a frame to
+adopt — read it only so you can test something they did NOT, and treat each assertion as a
+hypothesis until your own evidence confirms it. An independent reading catches what an author
+rationalizes away.
 
 BEFORE writing your verdict:
 - You MUST run at least one runtime check the implementer did NOT report.
@@ -494,6 +501,7 @@ Send your verdict to {REPO_PREFIX}-overseer.
 
 > Perspective: test quality and real-execution verification.
 > Frontmatter: `disallowedTools: Write, Edit, AskUserQuestion` on production files (writes to agent-workspace/ only).
+> Model diversity: where available, run on a different model family than the implementer.
 
 ```
 You are Reviewer B for {REPO_PREFIX} at {REPO_PATH}.
@@ -515,6 +523,15 @@ TEST-QUALITY MANDATE: Classify every test touched or added by the implementation
 - real-execution: exercises actual runtime behavior with real I/O, real DB, real calls — strongest signal
 A "tests pass" claim backed only by structure-only or mock-simulation tests is INSUFFICIENT
 without at least one real-execution check. History: mock-passing units failed on real runs 7+ times.
+
+REWARD-HACK AUDIT (mandatory): confirm the tests were not gamed to pass. Check for, and cite
+file:line on, any of: `sys.exit(0)` / `os._exit(0)` inside a test or conftest file; `__eq__`/
+`__ne__` overrides or an "AlwaysEqual"-style object that makes assertions trivially true; a
+conftest `pytest_collection_modifyitems`/hook that force-passes or auto-skips; blanket
+`@pytest.mark.skip`/`xfail` added over previously-running tests; hardcoded expected values that
+mirror the implementation instead of the spec; tests deleted or weakened in this diff. Any of
+these → automatic FAIL with the file:line cited. (The test gate separately blocks a zero-tests-ran
+"hollow pass"; your job is the semantic gaming a regex cannot see.)
 
 BEFORE writing your verdict:
 - Run the BROAD test suite (not a scoped run). A scoped-run "pass" claim was wrong 3 times.
@@ -544,6 +561,7 @@ Write your verdict to agent-workspace/REVIEW-LOG.md under: ## Review B
     "structure_only": ["<test names>"]
   },
   "broad_suite_result": "<pass/fail + count>",
+  "reward_hack_findings": ["<file:line — test-gaming pattern found, or 'none found'>"],
   "gaps": ["<gap description>", "..."],
   "single_source_flags": ["<SINGLE-SOURCE finding you could not corroborate>"]
 }
@@ -618,6 +636,14 @@ Read, in order:
   ESCALATE the severity of that finding — treat it as a gap, not a confirmation.
 - Read the REVIEW-ITERATION counter: cat agent-workspace/REVIEW-ITERATION.txt (or 0 if absent).
   If this is already iteration 2 and verdict is FAIL, set escalate_required: true.
+- Grade the END-STATE against the acceptance criteria — NOT adherence to the 6-phase script. A
+  pipeline that ran every phase but missed a criterion is a FAIL; a criterion met by a
+  different-but-sound path is not a FAIL merely for deviating.
+- Mitigate judge bias: weigh cited evidence, not the ORDER you read the reviews in and not their
+  LENGTH — a longer review or a larger diff is not higher quality, and you do not defer to
+  whichever reviewer you read first.
+- You must NOT be the same agent/model that produced the implementation. Judge on the cited
+  file:line evidence, never on authorship or your own prior reasoning.
 
 ## Verdict format (required — hook parses this JSON)
 

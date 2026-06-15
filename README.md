@@ -2,8 +2,9 @@
 
 A multi-repo orchestration harness for Claude Code. One Claude Code session acts as a
 "CEO" that drives structured, gated agent pipelines across several repositories in
-parallel, coordinates changes that cross repo boundaries, and runs unattended through
-context compaction without losing state.
+parallel and coordinates changes that cross repo boundaries. It runs **interactively by
+default** — you confirm the plan and the CEO yields to steer at phase boundaries — with an
+**opt-in unattended mode** that keeps working through context compaction without losing state.
 
 It is **not** an application or a daemon. It is a set of Claude Code skills (slash
 commands), custom subagent definitions, and `settings.json` hooks that turn a single
@@ -11,9 +12,9 @@ Claude Code session into a supervised, rule-enforced orchestrator built entirely
 native Claude Code primitives.
 
 > **Status: experimental.** Requires Claude Code with the agent-teams feature
-> (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). The shipped hooks assume Windows paths and a
-> specific Python interpreter path — you must adapt them to your environment (see
-> [Setup](#setup)). MIT licensed.
+> (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). The hooks invoke `python` on PATH via
+> `$CLAUDE_PROJECT_DIR` — adjust the interpreter for your OS (see [Setup](#setup)).
+> MIT licensed.
 
 ---
 
@@ -29,11 +30,12 @@ native Claude Code primitives.
   test gates, review gates, and stop signals are enforced by `settings.json` hooks that run
   regardless of what the model "decides." A hook can block a tool call (`exit 2`) even under
   `--dangerously-skip-permissions`.
-- **Survives context compaction losslessly and unattended.** A self-healing `PreCompact`
-  hook writes a machine-readable resume anchor (git HEADs, phase gates, mission, task
-  snapshot) to disk before every compaction; a `SessionStart` hook re-injects it afterward.
-  The CEO is instructed to keep working *through* compaction rather than stopping for a
-  human. See [Autonomous perseverance](#autonomous-perseverance-through-compaction).
+- **Two modes: collaborative by default, unattended on opt-in.** By default the CEO yields to
+  the operator at phase boundaries — the highest-quality mode. When you explicitly engage
+  unattended mode, a self-healing `PreCompact` hook writes a machine-readable resume anchor
+  (git HEADs, phase gates, mission, task snapshot) to disk before every compaction and a
+  `SessionStart` hook re-injects it afterward, so the run keeps working *through* compaction
+  without a human. See [Operating modes](#operating-modes).
 - **Is frugal by default.** Before spawning a pipeline, the Overseer reads the code and
   assesses whether the task needs a pipeline at all. Investigation/verification tasks and
   one-line fixes are resolved directly — no 8-agent pipeline for a typo.
@@ -69,7 +71,7 @@ fixed order, running the test suite between merges.
 | **2** | **Research.** Two researchers annotate the plan; architect revises; loop exits on a 5-condition AND-gate, emitting `IMPLEMENTATION-MANIFEST.md`. | `RESEARCH.GATE` |
 | **3** | **Implement.** Implementers execute batches (parallel via worktrees when file sets are disjoint/uncertain). CEO merges branches + runs the suite. | `IMPLEMENT.GATE` |
 | **4** | **Index.** One pass on merged main updates/repairs the Codebase-Index. | `INDEX.GATE` (0 stale + 0 missing) |
-| **5** | **Review.** Two independent reviewers → completeness critic → judge emits binding PASS/FAIL JSON. | `REVIEW.GATE` (judge PASS; capped at 2 fix iterations then escalates) |
+| **5** | **Review.** Two independent, fresh-context reviewers (correctness + test-quality with a reward-hack audit) → completeness critic → a bias-mitigated judge emits binding PASS/FAIL JSON. | `REVIEW.GATE` (judge PASS; capped at 2 fix iterations then escalates) |
 | **6** | **Finalize.** CEO re-runs the broad suite against a frozen baseline, then makes one pathspec-scoped commit. | — |
 
 Phase gates are **sentinel files** (`agent-workspace/<PHASE>.GATE`). A `PreToolUse` hook
@@ -110,36 +112,43 @@ work. They are wired in `.claude/settings.json`.
 | `PreToolUse` | `check_stop_file.py` | If `agent-workspace/STOP` exists, halts the agent at its next tool boundary (faster than a turn boundary — the kill switch for a runaway agent). |
 | `SubagentStop` / `TeammateIdle` | `check_artifacts.py` | Blocks a subagent/Overseer from finishing until its declared deliverable exists. |
 | `PostToolBatch` | `check_turn_budget.py` | Forces a yield if a subagent runs past a time budget. |
-| `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py`, `check_toolcall_audit.py` | Blocks task closure unless tests pass / judge verdict is PASS / reviewer actually read files. |
-| `Stop` | `check_pipeline_complete.py` | Blocks the CEO's turn from ending while any expected `*.GATE` is missing or an escalation is pending. |
+| `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py`, `check_toolcall_audit.py` | Blocks task closure unless the suite passes **and actually ran tests** (a zero-test "hollow pass" is rejected) / judge verdict is PASS / reviewer actually read files. |
+| `Stop` | `check_pipeline_complete.py` | Blocks the CEO's turn from ending while any expected `*.GATE` is missing or an escalation is pending; in opt-in unattended mode it also holds the turn so the run continues. |
 | `PreCompact` | `check_precompact.py` | Self-heals the resume anchor before compaction (never blocks). |
 | `SessionStart` | `inject_handoff_context.py` | Re-injects the resume anchor on startup/resume/compact. |
 
 ---
 
-## Autonomous perseverance through compaction
+## Operating modes
 
-The hard problem for a long unattended run is the context window filling up. Claude Code's
-auto-compaction is automatic and silent (it does not pause), but a naive agent treats
-"context is low" as a reason to stop and wait for a human. GOAT-CEO closes that gap:
+GOAT-CEO runs in one of two modes, chosen at the start of a session. **Collaborative is the
+default**; unattended is a deliberate opt-in.
 
-1. **Before compaction** — `check_precompact.py` regenerates a machine-readable
-   `agent-workspace/RESUME-STATE.md` from ground truth (per-repo `git` HEAD/branch, the
-   `*.GATE` sentinels present, the mission headline, dated diagnosis-doc pointers), preserves
-   the CEO-authored body (phase, task snapshot, next action), and **allows** the compaction.
-   It never blocks — blocking an auto-compaction at full context would deadlock an
-   unattended run.
-2. **After compaction** — `inject_handoff_context.py` (synchronous, so delivery is
-   guaranteed) re-injects that anchor **facts-first**, with a "verify against git + sentinels
-   before trusting" banner and a "this is a transparent resume — keep working" directive.
-3. **Doctrine** — the CEO is told that low context is *not* a stop condition; the only
-   legitimate stops are an operator `STOP` file, a hard escalation, or mission completion.
+- **Collaborative (default).** An operator is present. The CEO runs the interactive intake,
+  presents the plan for confirmation, and **yields at phase boundaries** so the operator can
+  steer. This is the highest-quality mode and the right choice for almost every session — none
+  of the never-stop machinery below applies.
+- **Unattended (opt-in).** For a genuinely unattended/overnight run with no operator present.
+  Only when you explicitly engage it does the CEO turn on the keep-going survival layer that
+  lets it work *through* Claude Code's auto-compaction:
+  1. **Before compaction** — `check_precompact.py` regenerates a machine-readable
+     `agent-workspace/RESUME-STATE.md` from ground truth (per-repo `git` HEAD/branch, the
+     `*.GATE` sentinels present, the mission headline, dated diagnosis-doc pointers), preserves
+     the CEO-authored body (phase, task snapshot, next action), and **allows** the compaction.
+     It never blocks — blocking an auto-compaction at full context would deadlock the run.
+  2. **After compaction** — `inject_handoff_context.py` (synchronous, so delivery is
+     guaranteed) re-injects that anchor **facts-first**, with a "verify against git + sentinels
+     before trusting" banner. The resume banner only tells the CEO to "keep working through
+     compaction" when unattended mode is engaged.
+  3. **Doctrine** — in unattended mode only, low context is *not* a stop condition; the
+     legitimate stops are an operator `STOP` file, a hard escalation, or mission completion.
 
-The resume anchor is **machine-derived facts, not decaying prose**, and every durable
-artifact has a size budget so it is never truncated at the injection boundary. An optional
-outer loop (`scripts/autonomous-loop.ps1`) relaunches the session on process death (crash,
-reboot) and the `SessionStart` hook re-grounds it — so the work survives not just
-compaction but the process itself dying.
+The resume anchor is **machine-derived facts, not decaying prose**, and every durable artifact
+has a size budget so it is never truncated at the injection boundary. An optional outer loop
+(`scripts/autonomous-loop.ps1`) relaunches the session on process death (crash, reboot) and the
+`SessionStart` hook re-grounds it — so an unattended run survives not just compaction but the
+process itself dying. All of this behavior lives in one opt-in doctrine file
+(`.claude/commands/goat-ceo/unattended-mode.md`); in collaborative mode it is dormant.
 
 ---
 
@@ -170,8 +179,8 @@ registered as **read-only reference** sources that agents may cite but never mod
 - One session coordinates many repos; no terminal-juggling, no manual context copying.
 - Guardrails are hook-enforced, so they hold even when the model is wrong or under
   `--dangerously-skip-permissions` — `deny` rules and blocking hooks still fire.
-- Lossless, unattended resume across compaction and process death — durable state lives in
-  files + git, not in the context window.
+- Opt-in unattended mode gives lossless resume across compaction and process death — durable
+  state lives in files + git, not in the context window.
 - Frugal: assessment-first means trivial tasks don't spawn a pipeline.
 - All state is inspectable on disk (`agent-workspace/`, `*.GATE`, `RESUME-STATE.md`, logs)
   and in git — no hidden state, no database.
@@ -183,8 +192,9 @@ registered as **read-only reference** sources that agents may cite but never mod
   tiering reduce this, but large waves are expensive. This is not the cheap path.
 - **Experimental dependency.** Requires the agent-teams feature flag; behavior tracks the
   current Claude Code version and can shift between releases.
-- **Environment-specific as shipped.** The hooks hardcode a Python interpreter path and
-  absolute hook paths; you must edit them for your machine/OS before use.
+- **Environment-specific as shipped.** Hooks invoke `python` on PATH via `$CLAUDE_PROJECT_DIR`;
+  confirm your OS has the right interpreter on PATH and that your Claude Code version expands
+  `$CLAUDE_PROJECT_DIR` in hook commands.
 - **Quality erodes slightly across many compactions** (summarization is lossy); mitigated by
   externalizing state, but a multi-day single session is not free of drift.
 - **Single-session orchestration** is a single point of failure for the CEO; the resume
@@ -200,10 +210,10 @@ registered as **read-only reference** sources that agents may cite but never mod
 
 1. Requires Claude Code with agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, set in
    `.claude/settings.json`).
-2. **Edit `.claude/settings.json` and `.claude/hooks/*.py` for your environment.** As
-   shipped they reference a Windows Python path (`...Python312\python.exe`) and absolute hook
-   paths. Replace these with your interpreter and clone location. `inject_handoff_context.py`
-   also references an absolute memory directory — point it at your own or remove it.
+2. **Confirm the hook interpreter for your environment.** Hooks invoke `python` on PATH via
+   `$CLAUDE_PROJECT_DIR/.claude/hooks/`. Adjust the interpreter (`python`/`python3`/`py`) for
+   your OS if needed, and confirm your Claude Code version expands `$CLAUDE_PROJECT_DIR` in
+   hook commands (otherwise replace it with an absolute path).
 3. Hooks must be trusted on first run. For unattended use, encode hard safety as
    `permissions.deny` rules (these survive `--dangerously-skip-permissions`); never rely on
    chat instructions, which are lost on compaction.
@@ -213,7 +223,7 @@ registered as **read-only reference** sources that agents may cite but never mod
 ## Commands
 
 ```
-/goat-ceo                                  # multi-repo orchestration (interactive setup, then autonomous)
+/goat-ceo                                  # multi-repo orchestration (interactive by default; opt-in unattended)
 /goat-team:goat <task>                     # single-repo full pipeline
 /goat-team:goat-plan <task>                # plan + research only, no code changes
 /goat-team:goat-review                     # dual-reviewer audit of existing changes
@@ -228,7 +238,7 @@ registered as **read-only reference** sources that agents may cite but never mod
 .claude/
   commands/
     goat-ceo.md                 # multi-repo CEO entry point
-    goat-ceo/                   # protocols.md, templates.md, rules.md, roster.md, anti-drift.md
+    goat-ceo/                   # rules.md, protocols.md, templates.md, roster.md, anti-drift.md, unattended-mode.md
     goat-team/                  # single-repo pipeline skill + role scripts
   agents/                       # custom subagent definitions (team-overseer, -architect, ...)
   hooks/                        # the enforcement layer (Python) + autonomous-loop notes
@@ -246,4 +256,4 @@ logs/                           # per-session audit trail (gitignored)
 Inspired by [GSD — Get Shit Done](https://github.com/gsd-build/get-shit-done), which
 established that structured, phase-based agent pipelines outperform ad-hoc prompting.
 GOAT-CEO extends that idea across repository boundaries and adds a hook-enforced rule layer
-and unattended compaction survival. MIT licensed.
+and an opt-in unattended compaction-survival mode. MIT licensed.
