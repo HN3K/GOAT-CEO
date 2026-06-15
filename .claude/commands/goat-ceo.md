@@ -337,7 +337,7 @@ If the Workflow tool is available (check `/workflows` view), ask Claude to autho
 
 Gate-sentinel logic inside the Workflow script is expressed as JS conditionals (e.g., `if (!fs.existsSync('agent-workspace/PLAN.GATE')) { ... }`), not YAML `condition:` strings. The script drives all 6 phases in order, checking each gate file before advancing.
 
-**Correct execution order within the review phase (B3):** Reviewers run first → both verdict blocks land in `REVIEW-LOG.md` → completeness-critic runs (reads those blocks) → judge runs (reads critic output + verdict blocks) → judge PASS causes `REVIEW.GATE` to be written. The completeness-critic and judge are NEVER conditioned on `REVIEW.GATE` existing — that gate is their OUTPUT, not their precondition.
+**Correct execution order within the review phase (B3):** Reviewers run first → both verdict blocks land in `REVIEW-LOG.md` → completeness-critic runs (reads those blocks) → judge runs (reads critic output + verdict blocks) → judge PASS causes the **CEO to write** `REVIEW.GATE` (the `check_review_gate.py` hook validates the verdict but does not write the gate). The completeness-critic and judge are NEVER conditioned on `REVIEW.GATE` existing — that gate is their OUTPUT, not their precondition.
 
 **MANDATORY PROSE FALLBACK — use this when Workflow is unavailable or when recovering from a failed Workflow:**
 
@@ -357,7 +357,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 - Both researchers read the plan and annotate it in `agent-workspace/RESEARCH-LOG.md`
 - Overseer spawns `{prefix}-planner-review` (`team-architect`) to resolve annotations
 - Loop exits only on the 5-condition AND-gate: both researchers at 0 issues, all tracker items resolved/dismissed, no gaps, every step executable, `IMPLEMENTATION-MANIFEST.md` emitted
-- On LOOP_EXIT: `TaskCompleted` hook writes `agent-workspace/RESEARCH.GATE`
+- On LOOP_EXIT: **CEO writes** `agent-workspace/RESEARCH.GATE` after verifying the 5-condition AND-gate (no hook writes this gate)
 - Completeness critic (lightweight haiku agent, `tools: Read, Grep`) runs after exit: emits JSON list of acceptance criteria unmentioned by any researcher (silent gaps); CEO reviews before proceeding
 - CEO confirms gate; updates `STATUS.md`: `phase: RESEARCH.COMPLETE`
 
@@ -387,7 +387,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 - Runs ONCE on merged main (never per-worktree — index race)
 - Overseer spawns `{prefix}-index-updater` (`team-implementer`, no isolation)
 - Index updater runs `codebase-index-tools check --all --format json`; fix any stale or missing entries
-- `TaskCompleted` hook parses JSON: 0 stale + 0 missing → writes `agent-workspace/INDEX.GATE`
+- CEO runs `check --all --format json` on merged main; 0 stale + 0 missing → **CEO writes** `agent-workspace/INDEX.GATE` (no index-check hook is wired today)
 - CEO confirms gate
 
 **Phase 5 — Review:**
@@ -397,7 +397,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 - **After both reviewer verdict blocks are present in `REVIEW-LOG.md`** (not before, and NOT conditioned on `REVIEW.GATE`): the Overseer spawns the completeness-critic and then the judge. This is the correct execution order — `REVIEW.GATE` is written by the judge PASS, so critic and judge must run BEFORE the gate exists, not after.
 - Overseer spawns completeness critic: lightweight haiku agent (`tools: Read, Grep`), parses both verdict blocks, emits JSON list of acceptance criteria unmentioned by any reviewer
 - Overseer spawns judge (opus, `tools: Read` only): reads both verdict blocks + completeness-critic output + Phase-2 single-source findings → emits binding JSON: `{"verdict": "PASS"|"FAIL", "severity": ..., "findings": [...]}`; explicitly prompted to escalate severity on weak/uncited findings
-- `TaskCompleted` hook `check_review_gate.py` parses judge JSON: PASS → writes `REVIEW.GATE`; FAIL → increments `REVIEW-ITERATION.txt`; iteration > 2 → writes `ESCALATE_REQUIRED: true`, CEO intervention required
+- `TaskCompleted` hook `check_review_gate.py` VALIDATES the judge JSON (exit 2 unless `"verdict": "PASS"`) and, past the iteration cap (> 2), writes `ESCALATE_REQUIRED`. On PASS the hook allows the task to close and the **CEO writes** `agent-workspace/REVIEW.GATE`. The hook does NOT write `REVIEW.GATE`.
 - `TaskCompleted` hook `check_toolcall_audit.py` counts reviewer Read/Grep/Bash calls — blocks completion if below minimum (a reviewer with no reads is a hallucination vector)
 - CEO confirms gate or handles escalation
 

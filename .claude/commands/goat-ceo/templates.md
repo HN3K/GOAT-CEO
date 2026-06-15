@@ -402,7 +402,7 @@ TaskCreate:
 
 Parallel-safe batches (no shared files): create all TaskCreate calls before spawning any agents.
 Sequenced batches (shared file or order-dependent): add `addBlockedBy` and spawn the next agent
-only after the prior task's `TaskCompleted` hook fires (hook writes `IMPLEMENT-BATCH-{N}.GATE`).
+only after the prior task's `TaskCompleted` test gate passes; the **CEO** then writes `IMPLEMENT-BATCH-{N}.GATE` (no hook writes it).
 
 ---
 
@@ -969,7 +969,7 @@ STATE 0 — check gate sentinels:
 STATE 1 — PLAN:
   Spawn: {REPO_PREFIX}-planner via Agent tool (subagent_type: team-architect)
   Prompt: [Architect template §5 with variables filled]
-  Gate: wait for agent-workspace/PLAN.GATE to exist (TaskCompleted hook writes it).
+  Gate: wait for agent-workspace/PLAN.GATE to exist (CEO writes it after the SubagentStop artifact check; no hook writes it).
   Advance to STATE 2.
 
 STATE 2 — RESEARCH (fan-out):

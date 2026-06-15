@@ -122,11 +122,15 @@ The change may break a consuming repo. CEO spawns or resumes a `team-ceo-assista
 Each phase end is gated by a sentinel file in `agent-workspace/`. The `check_phase_gate.py` `PreToolUse` hook reads `agent-workspace/PHASE-GATES.json` (written by the CEO at wave start) to map role → required sentinel.
 
 ```
-agent-workspace/PLAN.GATE         — written by TaskCompleted hook after PLAN.md structure validates
-agent-workspace/RESEARCH.GATE     — written after 5-condition AND-gate passes
+agent-workspace/PLAN.GATE         — written by CEO after SubagentStop hook validates PLAN.md structure
+agent-workspace/RESEARCH.GATE     — written by CEO after 5-condition AND-gate passes
 agent-workspace/IMPLEMENT.GATE    — written by CEO after worktree merge + broad suite passes
-agent-workspace/INDEX.GATE        — written after codebase-index-tools check --all returns 0 stale
-agent-workspace/REVIEW.GATE       — written after judge JSON "verdict": "PASS" + dual reviewer PASS
+agent-workspace/INDEX.GATE        — written by CEO after codebase-index-tools check --all returns 0 stale
+agent-workspace/REVIEW.GATE       — written by CEO after judge JSON "verdict": "PASS" + dual reviewer PASS
+
+(No hook writes any *.GATE file. Hooks only VALIDATE — exit 0 to allow, exit 2 to block;
+check_review_gate.py additionally writes ESCALATE_REQUIRED. The CEO is the sole gate writer,
+which keeps gate advancement a deliberate CEO decision, not a hook side effect.)
 ```
 
 The `check_pipeline_complete.py` Stop hook blocks the CEO's turn from ending while any `*.GATE` is missing or `agent-workspace/ESCALATE_REQUIRED` is set.
@@ -137,7 +141,7 @@ The `check_pipeline_complete.py` Stop hook blocks the CEO's turn from ending whi
 The architect (`team-architect`) runs as a teammate in plan mode. After the architect submits its plan, the **CEO reviews the plan draft and explicitly approves it** using the native teammate plan-approval primitive before the architect proceeds to execution mode. This is the native implementation of the Phase 1→2 gate — it replaces the old `goat-plan` separate-session pattern with a harness-enforced approval step. The CEO MUST approve the plan before the architect may take any write action. Criteria for approval: PLAN.md contains all required sections, the fenced JSON acceptance-criteria block is present, and all criteria are testable (not vague). If the plan fails criteria: CEO rejects with specific required changes; architect revises and resubmits.
 
 **Plan → Research (PLAN.GATE write):**
-- After CEO plan-approval (above), `TaskCompleted` hook `.claude/hooks/check_artifacts.py` verifies PLAN.md exists and has the required structure. On success it exits 0 (allows the task to close). **The hook does NOT write PLAN.GATE** — it only validates artifact presence. **(HARD validation — hook live)**
+- After CEO plan-approval (above), the `SubagentStop` hook `.claude/hooks/check_artifacts.py` verifies PLAN.md exists and has the required structure when the architect subagent stops. On success it exits 0 (allows the subagent to stop). **The hook does NOT write PLAN.GATE** — it only validates artifact presence. **(HARD validation — hook live)**
 - CEO action: after `check_artifacts.py` passes (task closes), **CEO explicitly writes `agent-workspace/PLAN.GATE`** to advance the pipeline, then spawns researchers.
 
 **Research → Implement (RESEARCH.GATE write):**
@@ -149,7 +153,7 @@ The architect (`team-architect`) runs as a teammate in plan mode. After the arch
 - CEO action: spawn index-updater on merged main (no isolation — runs ONCE on main, never per-worktree).
 
 **Index → Review (INDEX.GATE write):**
-- `TaskCompleted` hook on index-updater task runs `codebase-index-tools check --all --format json`; parses JSON; exit 2 if `stale > 0` or `missing > 0`. On pass, writes `INDEX.GATE`.
+- CEO runs `codebase-index-tools check --all --format json` on merged main; parses JSON; if `stale > 0` or `missing > 0`, re-spawns the index-updater to fix and re-checks. On `0 stale / 0 missing`, CEO writes `INDEX.GATE`. (No index-check hook is wired; this gate is CEO-validated. A `TaskCompleted` index hook could be added later, but is not present today.)
 - CEO action: spawn Reviewer A + Reviewer B simultaneously.
 
 **Review → Verify/Finalize (REVIEW.GATE write):**
