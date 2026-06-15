@@ -2,13 +2,12 @@
   "$schema": "https://claude.ai/schema/settings.json",
   "_comment_purpose": "GOAT-CEO project-scope enforcement surface. B1 enforcement layer (REWORK-REVIEW 2026-06-13, convergence pass 2026-06-13). Fail-open design: every hook exits 0 on any exception; a hook crash never blocks legitimate work. HARD denies cover only truly-unconditional rules (no legitimate exception ever). Gate-with-approval rules are handled by fail-open PreToolUse hooks so the CEO can never be locked out. worktree.baseRef is set to 'head' so implementer worktrees branch from local HEAD (in-progress state) not origin/HEAD. PostCompact hook removed — PostCompact does not support additionalContext; compaction-resume is covered by the SessionStart matcher 'startup|resume|clear|compact'.",
   "_comment_paths": "Hooks invoke python on PATH and reference scripts via $CLAUDE_PROJECT_DIR/.claude/hooks/. Adjust the interpreter (python/python3/py) for your OS, and confirm your Claude Code version expands $CLAUDE_PROJECT_DIR in hook commands.",
-  "_comment_enforcement_design": "Two-tier design: (1) permissions.deny = truly-unconditional rules — git add -A/., .env writes, DROP DATABASE. No exceptions exist for these. (2) PreToolUse hooks = gate-with-approval / role-gated rules — raw git commit/push warned not blocked; DROP/RESTORE DATABASE requires token; git add -A/. blocked redundantly as belt-and-suspenders; repo-registry.json writes are ROLE-GATED by guard_registry.py (CEO + team-overseer allowed, other subagents blocked) — NOT a blanket deny, because the CEO is the legitimate writer (Step 1.1 intake + lastSession updates); a role-blind deny here previously locked the CEO out of its own registry, a bug fixed in this pass. deny beats allow unconditionally in Claude Code, so the old git-commit deny+allow pair is replaced by the hook approach.",
+  "_comment_enforcement_design": "Two-tier design: (1) permissions.deny = truly-unconditional rules — git add -A/. and .env writes. No exceptions exist for these. (2) PreToolUse hooks = gate-with-approval / role-gated rules — raw git commit/push warned not blocked; the STOP-file kill switch (check_stop_file.py) fires before every Bash|PowerShell|Write|Edit so a runaway agent halts at the tool boundary, not the turn boundary; repo-registry.json writes are ROLE-GATED by guard_registry.py (CEO + team-overseer allowed, other subagents blocked) — NOT a blanket deny, because the CEO is the legitimate writer (Step 1.1 intake + lastSession updates); a role-blind deny here previously locked the CEO out of its own registry, a bug fixed in this pass. deny beats allow unconditionally in Claude Code, so the old git-commit deny+allow pair is replaced by the hook approach. Destructive-DB gating (guard_destructive_db.py) is NOT generic core and is intentionally NOT wired here — it is a project-specific guard wired in USER scope only for repos that need it (see rules.md Rule 3 / the DB row in the HARD/SOFT map); the hook script ships in .claude/hooks/ for that opt-in use.",
 
   "permissions": {
     "deny": [
       "Bash(git add -A*)",
       "Bash(git add .*)",
-      "Bash(*DROP DATABASE*)",
       "Edit(**/.env)",
       "Write(**/.env)"
     ]
@@ -29,25 +28,26 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Bash|PowerShell|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_stop_file.py\""
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_git_commit.py\""
-          },
-          {
-            "type": "command",
-            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_destructive_db.py\""
           }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
-          {
-            "type": "command",
-            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_stop_file.py\""
-          },
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_registry.py\""

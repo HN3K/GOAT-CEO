@@ -92,7 +92,7 @@ queue, or daemon. The orchestration *is* the Claude Code feature surface:
 | **Subagents with isolated context** | Verbose work (research, review, large reads) runs in subagents with their **own** context windows; only short structured results return to the CEO. This is the primary defense against CEO context exhaustion. |
 | **Task list** (`TaskCreate`, `TaskList`, `addBlockedBy`) | One task per phase per repo, chained with `addBlockedBy` to enforce phase order. The shared task list doubles as the cross-repo dashboard. |
 | **Hooks** (`settings.json`) | The enforcement layer — see [below](#the-hook-enforcement-layer). Hooks block independently of permission mode. |
-| **`permissions.deny`** | Hard, unconditional rules (`git add -A/.`, `DROP DATABASE`, `.env` writes, registry writes). Enforced even under `--dangerously-skip-permissions`. |
+| **`permissions.deny`** | Hard, unconditional rules (`git add -A/.`, `.env` writes). Enforced even under `--dangerously-skip-permissions`. Conditional/role-gated rules (registry writes, destructive DB) are handled by fail-open hooks instead, so a deny can never lock the CEO out of legitimate work. |
 | **Permission modes** | Read-only scouts (CEO-Assistant, reviewers) run in `plan` mode; unattended runs use `dontAsk` + a tight allow-list or sandboxed bypass. |
 | **Worktree isolation** | Parallel implementers each get a fresh git worktree (`isolation: worktree`) so concurrent edits never collide; the CEO merges branches afterward. |
 | **Workflow tool** (optional) | When available, the per-repo pipeline can be authored as a JavaScript Workflow script so the plan lives in the script, not the CEO's context. A prose state-machine fallback runs the same 6 phases without it. |
@@ -108,8 +108,9 @@ work. They are wired in `.claude/settings.json`.
 |---|---|---|
 | `PreToolUse` | `check_phase_gate.py` | Blocks a role's Write/Edit/Bash until its required `*.GATE` exists. |
 | `PreToolUse` | `guard_git_commit.py` | Surfaces every commit/push for review (single-committer discipline). |
-| `PreToolUse` | `guard_destructive_db.py` | Requires an approval token before destructive DB operations. |
-| `PreToolUse` | `check_stop_file.py` | If `agent-workspace/STOP` exists, halts the agent at its next tool boundary (faster than a turn boundary — the kill switch for a runaway agent). |
+| `PreToolUse` | `guard_registry.py` | Role-gates `repo-registry.json` writes — CEO and `team-overseer` allowed, other subagents blocked. |
+| `PreToolUse` | `check_stop_file.py` | If `agent-workspace/STOP` exists, halts the agent at its next tool boundary (faster than a turn boundary — the kill switch for a runaway agent). Matcher `Bash\|PowerShell\|Write\|Edit`. |
+| `PreToolUse` *(opt-in, user-scope)* | `guard_destructive_db.py` | Requires a single-use approval token before `DROP`/`RESTORE DATABASE`. Ships in `.claude/hooks/` but is **not** wired by default — wire it at user scope only for repos that need it. |
 | `SubagentStop` / `TeammateIdle` | `check_artifacts.py` | Blocks a subagent/Overseer from finishing until its declared deliverable exists. |
 | `PostToolBatch` | `check_turn_budget.py` | Forces a yield if a subagent runs past a time budget. |
 | `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py`, `check_toolcall_audit.py` | Blocks task closure unless the suite passes **and actually ran tests** (a zero-test "hollow pass" is rejected) / judge verdict is PASS / reviewer actually read files. |

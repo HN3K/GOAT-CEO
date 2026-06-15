@@ -7,7 +7,7 @@
 
 > **Intake prerequisite (Rule #8 — non-skippable):** Before any step below runs, the CEO MUST have completed `goat-ceo.md` Steps 1 and 2 in full: repo list confirmed with the operator (including any `ro-reference` repos), Step 1.2 prerequisite/index check run for EVERY active `rw` repo, INDEX-AVAILABLE or INDEX-UNAVAILABLE recorded in `repo-registry.json`. The steps below are the AUTONOMOUS phase that follows confirmed intake — do not start them based on a directive goal alone.
 >
-> **Read-only reference repos (Rule #8):** Repos with `access: "ro-reference"` in `repo-registry.json` are ground-truth sources. Agents may READ them (Read/Grep/Glob tool calls, cite file:line). Agents are FORBIDDEN from writing to them — no Write, Edit, Bash mutation, or git operation targeting a reference repo path. The destructive-DB deny rules and git-commit guards already block most mutations; this briefing makes the intent explicit for any operation those hooks do not cover.
+> **Read-only reference repos (Rule #8):** Repos with `access: "ro-reference"` in `repo-registry.json` are ground-truth sources. Agents may READ them (Read/Grep/Glob tool calls, cite file:line). Agents are FORBIDDEN from writing to them — no Write, Edit, Bash mutation, or git operation targeting a reference repo path. The git-commit/push guard and STOP-file kill switch already block most mutations; this briefing makes the intent explicit for any operation those hooks do not cover.
 
 **Step 1 — Create the team.** The CEO's first action is `TeamCreate` with a session-scoped name (`goat-ceo-YYYYMMDD-HHMM`). Config lives at `~/.claude/teams/{name}/config.json`. The CEO becomes the fixed lead. All Overseers will become teammates of this team.
 

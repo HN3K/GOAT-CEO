@@ -11,10 +11,12 @@
 > worktree config) **have been created and wired as of 2026-06-13 — see `.claude/hooks/`
 > and `.claude/settings.json`**.
 > All hook scripts end in `except Exception: sys.exit(0)` (fail-open verified). Rules
-> marked HARD in this file are enforced by live harness mechanisms. The only HARD gate that
-> lives in user-scope (not project-scope) is `check_stop_file.py` wired in `~/.claude/` —
-> it reaches all repos. When a hard rule is bypassed by the harness (hook exit 2), the CEO
-> does not override the hook — it investigates why the gate fired.
+> marked HARD in this file are enforced by live harness mechanisms. `check_stop_file.py` is
+> wired in **project scope** (`.claude/settings.json`, matcher `Bash|PowerShell|Write|Edit`)
+> so the STOP kill switch covers every write-capable tool in this repo; for a multi-repo CEO
+> session it MAY ALSO be wired at user scope (`~/.claude/`) with absolute STOP paths so it
+> reaches teammate sessions rooted in other repositories. When a hard rule is bypassed by the
+> harness (hook exit 2), the CEO does not override the hook — it investigates why the gate fired.
 
 ---
 
@@ -29,7 +31,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 
 | Rule | Doctrine # | Enforcement | Mechanism |
 |---|---|---|---|
-| STOP-file checked before every Write/Edit/Bash/PowerShell (user-scope) | #3 | **HARD** | User-scope `~/.claude/` `check_stop_file.py` wired; reaches all repos regardless of cwd |
+| STOP-file checked before every Bash/PowerShell/Write/Edit | #3 | **HARD** | Project-scope `.claude/settings.json` `check_stop_file.py` wired, matcher `Bash\|PowerShell\|Write\|Edit`. Optional user-scope (`~/.claude/`) wiring with absolute STOP paths extends it to teammate sessions rooted in other repos |
 | No bare `git add -A`/`git add .` — pathspec only | #1 | **HARD** | `permissions.deny: Bash(git add -A*)` and `Bash(git add .*)` in project `.claude/settings.json` — wired |
 | No `git push` by subagents or CEO without explicit per-push confirm | #1 | **SOFT (warn-not-block)** | `PreToolUse` hook `.claude/hooks/guard_git_commit.py` — warns and asks for confirmation; does NOT hard-deny. CEO confirms each push before it runs. |
 | No `git commit` by subagents — CEO only, reviewed before each commit | #1 | **SOFT (warn-not-block)** | `PreToolUse` hook `.claude/hooks/guard_git_commit.py` — warns and asks for confirmation on `git commit` commands; does NOT hard-deny. The CEO is the single committer by convention; the hook surfaces any commit for review rather than blocking it unconditionally. |
@@ -50,7 +52,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 | `repo-registry.json` is CEO-only — no subagent writes | #6 | **HARD (role-gated)** | `PreToolUse` hook `.claude/hooks/guard_registry.py` — allows the CEO (no agent_type) + `team-overseer`, blocks all other subagent roles; fail-open. Replaces the former role-BLIND `permissions.deny: Write/Edit(repo-registry.json)`, which wrongly locked the CEO out of its own Step 1.1 registry write — wired |
 | Confirm repo list + run Step 1.2 index check before any execution, even when goal names repos | #8 | **SOFT** | MANDATORY-INTAKE RULE block in `goat-ceo.md` Step 1 header; INDEX status propagated via `{INDEX_STATUS}` in researcher/implementer spawn templates |
 | Researchers + implementers MUST run `search`/`inject` before work when INDEX-AVAILABLE; `check` after | #8 | **SOFT** | `{INDEX_STATUS}` block in templates.md §6, §7, §8, §15 — required steps when INDEX-AVAILABLE, documented fallback when INDEX-UNAVAILABLE |
-| Read-only reference repos (`access: "ro-reference"`) may be READ but never written to by any agent | #8 | **SOFT (backed by HARD guards)** | Briefing in Overseer template `{REFERENCE_REPOS}` block (templates.md §4) + protocols.md Part 0; destructive-DB deny + git-commit guard are the backstop |
+| Read-only reference repos (`access: "ro-reference"`) may be READ but never written to by any agent | #8 | **SOFT (backed by HARD guards)** | Briefing in Overseer template `{REFERENCE_REPOS}` block (templates.md §4) + protocols.md Part 0; the STOP-file kill switch + git-commit/push guard are the backstop |
 | `ro-reference` repos are EXEMPT from GOAT/index bootstrap; existing indexes may be used for search | #8 | **SOFT** | Step 1.2 exemption rule in `goat-ceo.md`; `access` field in `repo-registry.json` carries the signal |
 | `.env` files cannot be modified by agents | #3 | **HARD** | `permissions.deny: Edit(**/.env)`, `Write(**/.env)` in project `settings.json` — wired |
 | Cite `file:line` or the finding is a hallucination | #4 | **SOFT** | briefing in role prompts; backed by live `check_toolcall_audit.py` |
@@ -98,7 +100,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 **Why (the 2026-06-12 marathon-turn incident):** An implementer ran a single marathon turn lasting ~40 minutes. During that turn, the CEO sent STOP and redirect messages. Those messages queued but delivered only at the turn boundary — which never came because the implementer was continuously executing tool calls. The agent performed an unauthorized DB rebuild and collided with a live operator session. Recovery cost two hours. The STOP-file gate is a HARD mechanism that fires at every tool boundary, not at turn boundaries — making it effective even inside a marathon turn.
 
 **How enforced:**
-- `PreToolUse` hook `check_stop_file.py`, matcher `Bash|PowerShell|Write|Edit` — checks `agent-workspace/STOP` before every matched tool call; exit 2 if present. **(HARD — user-scope hook wired in `~/.claude/`; reaches all repos.)**
+- `PreToolUse` hook `check_stop_file.py`, matcher `Bash|PowerShell|Write|Edit` — checks `agent-workspace/STOP` before every matched tool call; exit 2 if present. **(HARD — wired in project-scope `.claude/settings.json`; optionally extended to other repos via a user-scope `~/.claude/` wiring with absolute STOP paths.)**
 - `maxTurns: 30` on implementer, `maxTurns: 20` on verifier in agent frontmatter — hard cap, harness stops the agent. **(HARD — frontmatter fields applied to `team-implementer.md` / `team-verifier.md`)**
 - `PostToolBatch` hook `.claude/hooks/check_turn_budget.py` — checks elapsed time since `SubagentStart`; if > threshold exit 2 to force a hard yield. **Availability-gate: verify `PostToolBatch`/`SubagentStart` exist on the installed version (`claude --version`) before relying on them. If absent, `maxTurns` is the primary cap.** **(HARD when available — hook wired in settings.json)**
 - Phase gate `.claude/hooks/check_phase_gate.py` — prevents an implementer from writing/editing before `RESEARCH.GATE` exists, blocking an out-of-order runaway. **(HARD — hook live)**

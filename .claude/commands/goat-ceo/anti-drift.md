@@ -127,9 +127,11 @@ turn boundary, exactly the problem. The out-of-band view answers "is it moving?"
 
 ### 5a. What it is
 
-`agent-workspace/STOP` is a sentinel. `check_stop_file.py` is wired at `PreToolUse` in **user-scope** `~/.claude/` so
-it reaches agents in all repo subdirectories. Matcher is widened to `Bash|PowerShell|Write|Edit` so an implementer
-doing only file mutations (no Bash) is also gated.
+`agent-workspace/STOP` is a sentinel. `check_stop_file.py` is wired at `PreToolUse` in **project scope**
+(`.claude/settings.json`) with matcher `Bash|PowerShell|Write|Edit`, so it gates every write-capable tool in this repo
+— including an implementer doing only file mutations (no Bash). For a multi-repo CEO session, ALSO wire it at
+**user scope** (`~/.claude/`) with absolute STOP paths so it reaches teammate sessions rooted in other repositories
+(see §5d).
 
 ### 5b. How to issue a hard stop
 
@@ -152,8 +154,9 @@ Write agent-workspace/STOP with content: "CEO_STOP {ISO_TIMESTAMP}"
 
 ### 5d. Per-repo STOP files for multi-repo waves
 
-The user-scope hook checks a list of `STOP_PATHS`; each repo's `agent-workspace/STOP` should be in it. To stop ALL
-agents at once, write each repo's STOP file; to resume, remove them one at a time.
+The project-scope hook checks this repo's `agent-workspace/STOP`. For multi-repo coverage, the optional user-scope
+hook checks a list of `STOP_PATHS`; each repo's `agent-workspace/STOP` should be in it. To stop ALL agents at once,
+write each repo's STOP file; to resume, remove them one at a time.
 
 ---
 
