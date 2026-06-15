@@ -137,6 +137,7 @@ All hook scripts and `.claude/settings.json` are created and verified fail-open 
 - `cleanupPeriodDays: 7` in `settings.json` — stale worktrees swept automatically. **(config — wired)**
 - `.worktreeinclude` at repo root copies `agent-workspace/` and `.env` into each worktree so implementers can read PLAN.md and the manifest. (config)
 - Single implementer or provably-disjoint-by-module batches MAY use `isolation: none` with explicit file scope in the spawn prompt. Document the disjoint reasoning; default is worktree.
+- The disjoint partition is declared machine-readably in `IMPLEMENTATION-MANIFEST.json` (schema + reconvergence procedure in `protocols.md §D`, design rationale in `GOAT-CEO-REWORK-DESIGN.md §D`). The CEO's speculative-batch integrate stage relies on independent batches having truly disjoint `files[]`; "provably disjoint" means declared and verified there, not merely asserted in prose.
 
 ---
 

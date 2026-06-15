@@ -145,7 +145,7 @@ The architect (`team-architect`) runs as a teammate in plan mode. After the arch
 - CEO action: after `check_artifacts.py` passes (task closes), **CEO explicitly writes `agent-workspace/PLAN.GATE`** to advance the pipeline, then spawns researchers.
 
 **Research → Implement (RESEARCH.GATE write):**
-- CEO (or overseer) verifies the 5-condition AND-gate: both researchers at 0 open issues, all ISSUE-TRACKER.md items resolved or dismissed, no plan gaps, every step has an executable command, `IMPLEMENTATION-MANIFEST.md` exists. On pass, CEO writes `RESEARCH.GATE`.
+- CEO (or overseer) verifies the 5-condition AND-gate: both researchers at 0 open issues, all ISSUE-TRACKER.md items resolved or dismissed, no plan gaps, every step has an executable command, BOTH `IMPLEMENTATION-MANIFEST.md` AND `IMPLEMENTATION-MANIFEST.json` exist (the `.json` must parse and its independent batches must have disjoint `files[]` — see §D). On pass, CEO writes `RESEARCH.GATE`.
 - CEO action: spawn implementers (with worktree isolation if parallel).
 
 **Implement → Index (IMPLEMENT.GATE write):**
@@ -226,25 +226,80 @@ When the loop exits, the CEO receives a notification and checks whether STATUS.m
 
 ---
 
-## Part 4 — Worktree Merge Order (§D Integration)
+## Part 4 — Worktree Reconvergence (§D Integration)
 
-When parallel implementers complete their worktree branches, the CEO integrates in this fixed order:
+Fan-out is cheap; reconvergence is the bottleneck. A pure serial "merge → full suite → merge" is
+Amdahl-bound — it caps fan-out speedup at ~1/s (s = the test-suite fraction of total work) and stops
+paying off at roughly N ≈ 1/s branches. The CEO reconverges using a **speculative batch** strategy driven
+by the structured partition the architect emits. Merge stays CEO-driven (single committer, Doctrine #1);
+the design rationale is `GOAT-CEO-REWORK-DESIGN.md §D`.
 
-1. **Verify each branch before merging:** CEO spawns a `team-verifier` (read-only, no isolation, `disallowedTools: Write, Edit`) per branch: "Run `git diff master..worktree-<name>`. Verify the diff is consistent with the IMPLEMENTATION-MANIFEST.md scope for this batch. PASS or FAIL with evidence." Do not merge a FAIL branch — escalate.
+### Input — the partition manifest (`IMPLEMENTATION-MANIFEST.json`)
 
-2. **Merge in manifest order:** For each PASS branch, in the order specified by `IMPLEMENTATION-MANIFEST.md`:
-   ```
-   git merge worktree-<name> --no-ff -m "integrate: <batch-description>"
-   ```
-   Then immediately run the broad test suite. Abort and escalate on any failure before merging the next branch.
+The architect emits this machine-readable partition alongside the human-readable `IMPLEMENTATION-MANIFEST.md`:
 
-3. **Conflict resolution:** If `git merge` reports conflicts, do NOT force-merge. Options in order: (a) CEO cherry-picks individual non-conflicting commits from the branch, (b) CEO spawns a manual-merge subagent with both branches and the conflict description, (c) escalate to operator.
+```json
+{
+  "baseRef": "<SHA the worktrees branch from>",
+  "coordinatorBatch": "batch-3",
+  "frozenInterfaces": ["payments.charge(amount, currency)", "User.serialize()"],
+  "batches": [
+    { "id": "batch-1", "branch": "worktree-auth",
+      "files": ["src/auth/login.py", "src/auth/session.py"],
+      "mergeOrder": 1, "blockedBy": [], "ownsSharedResources": false },
+    { "id": "batch-3", "branch": "worktree-deps",
+      "files": ["package-lock.json", "src/registry.py"],
+      "mergeOrder": 3, "blockedBy": ["batch-1"], "ownsSharedResources": true }
+  ]
+}
+```
 
-4. **After all branches merged:** CEO writes `IMPLEMENT.GATE`. Then Phase 4 (index update) runs once on merged main.
+Field rules:
+- `files` — explicit and **disjoint across independent batches**. Two batches with `blockedBy: []` MUST have
+  non-overlapping `files`; the integrate stage refuses to speculatively batch any two that overlap.
+- `mergeOrder` — total order for stacked landing and for the bisect fallback.
+- `blockedBy` — batch ids this batch depends on (stacked work). Non-empty ⇒ the branch was cut from its
+  parent's tip, not from `baseRef`, and lands AFTER its parents (bottom-up).
+- `ownsSharedResources` — exactly ONE batch (`coordinatorBatch`) owns every shared/generated/lockfile
+  resource (lockfiles, route tables, DI registries, generated code); all other batches must avoid them.
+- `frozenInterfaces` — signatures touched by >1 batch; no batch may change them. This defends against the
+  semantic conflict git is blind to (a signature change in one file + a new caller in a disjoint file).
 
-5. **Worktree cleanup:** After the merge is stable and `IMPLEMENT.GATE` is written, CEO removes merged worktrees: `git worktree remove worktree-<name> --force`. The `cleanupPeriodDays: 7` setting sweeps any orphaned ones.
+### Integrate procedure (CEO-driven)
 
-6. **Pathspec discipline:** Every CEO `git add` uses explicit pathspecs via `ceo-commit.sh`. The pattern `git add -A` and `git add .` are denied at the settings level and are never typed, even during recovery.
+1. **Per-branch scope verify.** For each branch, CEO spawns a read-only `team-verifier`: "Run
+   `git diff <baseRef>..worktree-<name>`. Confirm the changed paths are a SUBSET of this batch's `files[]`
+   and that no `frozenInterfaces` signature changed. PASS/FAIL with file:line." Do NOT merge a FAIL branch.
+
+2. **Speculative batch (independent branches).** Take all PASS branches with `blockedBy: []`. Because their
+   `files[]` are disjoint they cannot textually conflict. On a throwaway integration branch off `baseRef`,
+   merge them all (`--no-ff`), then run the BROAD suite ONCE on the combined state.
+   - **Green →** fast-forward `master` to the integration branch (one validated, coherent landing — the
+     serial fraction shrinks to a single suite run, not one-per-branch).
+   - **Red →** fall back to LINEARIZED landing: re-merge the same branches one at a time in `mergeOrder`,
+     running the suite after each, until it reddens — that branch is the culprit (the merge position IS the
+     bisect result; no separate `git bisect` needed). Eject it, escalate it, re-batch the remainder.
+
+3. **Stacked batches (dependent branches).** Land batches with non-empty `blockedBy` bottom-up in
+   `mergeOrder`, after their parents are on `master`. If a parent landed with changes, restack (rebase the
+   dependent branch onto the new `master` tip) before merging; re-run the suite after each land.
+
+4. **Conflict handling.** A textual conflict on a *verified-disjoint* batch means the partition was wrong —
+   treat it as a partition-quality failure. Do NOT force-merge: (a) CEO cherry-picks non-conflicting commits,
+   (b) CEO spawns a manual-merge subagent with both branches + the conflict, or (c) escalate. Log it as
+   evidence the partition was not actually disjoint.
+
+5. **Land complete.** CEO writes `IMPLEMENT.GATE`. Phase 4 (index update) runs ONCE on merged main.
+
+6. **Cleanup.** CEO removes merged worktrees (`git worktree remove worktree-<name> --force`);
+   `cleanupPeriodDays: 7` sweeps orphans.
+
+7. **Pathspec discipline.** Every CEO `git add` uses explicit pathspecs; `git add -A` / `git add .` are
+   denied at the settings level and never typed, even during recovery.
+
+**Best-of-N selection.** If a batch ran best-of-N (k attempts in k worktrees for one hard task), the winner
+is chosen by EXECUTING the batch's tests, never by an LLM judge — only the winner's branch enters step 1;
+discard losing worktrees with `git worktree remove --force`.
 
 ---
 

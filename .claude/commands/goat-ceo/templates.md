@@ -227,7 +227,18 @@ Reference the milestone ID in PLAN.md's header: Roadmap milestone: {MILESTONE_ID
 ## Deliverable
 
 Write agent-workspace/PLAN.md with all mandatory sections.
-Write agent-workspace/IMPLEMENTATION-MANIFEST.md with the batch + file assignments.
+Write agent-workspace/IMPLEMENTATION-MANIFEST.md (human-readable batch + file assignments).
+Write agent-workspace/IMPLEMENTATION-MANIFEST.json — the machine-readable partition the CEO's
+reconvergence stage consumes (schema in protocols.md §D). Hard requirements:
+  - every independent batch (`blockedBy: []`) MUST have a disjoint `files[]` set — no two independent
+    batches may list the same file;
+  - reserve ALL shared/generated/lockfile resources (lockfiles, route tables, DI registries, generated
+    code) to a single `coordinatorBatch`;
+  - list every function/method signature touched by more than one batch in `frozenInterfaces` (no batch
+    may change a frozen signature);
+  - use `blockedBy` for genuinely dependent work (those branches stack on their parent, not baseRef).
+  If you cannot prove a clean disjoint partition, say so in PLAN.md and sequence the overlapping work into
+  one batch rather than asserting false disjointness.
 Send a completion message to {REPO_PREFIX}-overseer with signal PLANNER_SIGNAL: RESEARCH_START.
 ```
 

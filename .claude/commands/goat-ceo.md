@@ -356,7 +356,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 - Overseer spawns `{prefix}-researcher-codebase` and `{prefix}-researcher-technical` simultaneously (both `subagent_type: team-researcher`)
 - Both researchers read the plan and annotate it in `agent-workspace/RESEARCH-LOG.md`
 - Overseer spawns `{prefix}-planner-review` (`team-architect`) to resolve annotations
-- Loop exits only on the 5-condition AND-gate: both researchers at 0 issues, all tracker items resolved/dismissed, no gaps, every step executable, `IMPLEMENTATION-MANIFEST.md` emitted
+- Loop exits only on the 5-condition AND-gate: both researchers at 0 issues, all tracker items resolved/dismissed, no gaps, every step executable, both `IMPLEMENTATION-MANIFEST.md` and `IMPLEMENTATION-MANIFEST.json` emitted (the `.json` partition parses and its independent batches are disjoint — see protocols.md §D)
 - On LOOP_EXIT: **CEO writes** `agent-workspace/RESEARCH.GATE` after verifying the 5-condition AND-gate (no hook writes this gate)
 - Completeness critic (lightweight haiku agent, `tools: Read, Grep`) runs after exit: emits JSON list of acceptance criteria unmentioned by any researcher (silent gaps); CEO reviews before proceeding
 - CEO confirms gate; updates `STATUS.md`: `phase: RESEARCH.COMPLETE`
