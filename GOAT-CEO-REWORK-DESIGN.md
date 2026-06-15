@@ -205,8 +205,14 @@ avoid drift. This section records the *design intent* behind it:
 - ✅ Step 1 — Decision-B **enforcement**: `.claude/hooks/check_partition.py` validates disjointness — a
   `SubagentStop` gate on the architect (blocks an invalid partition) and a CLI the CEO runs at the research
   gate. Tested across valid / overlapping / dangling-ref / hook-role cases.
-- Still pending in Decision B: the *executable* speculative-merge stage itself (today the §D procedure is
-  CEO-followed prose; under Decision A it becomes a Workflow pipeline stage).
+- ✅ Step 3 — Decision-A reference kernel: `.claude/commands/goat-ceo/pipeline-kernel.reference.js` — a
+  correct, API-validated Workflow execution kernel (research → revise → partition → worktree fan-out → merge
+  handoff), plus the review-kernel verdict-gate-as-stage in `templates.md §17`. Replaces the prior broken
+  skeleton (wrong `agent({subagent_type})` API + `fs`-based gate checks Workflows cannot run).
+- By design, NOT in the script: the §D speculative-MERGE itself stays CEO-manual (single committer, Doctrine
+  #1) — the kernel fans out and hands the branch list back; the CEO lands and launches the review kernel.
+- Remaining to make execution fully live: instantiate the kernel against a real target repo + task (the CEO
+  fills `{VARIABLE}`s at Step 3.1); optionally rewire the tool-call audit onto `SubagentStop` (R3).
 
 **Verified facts (2026-06-15, all live probes):**
 - ✅ PreToolUse hooks fire on Workflow agents and carry `agent_type`.

@@ -769,198 +769,74 @@ Work only within the repos listed above.
 
 ---
 
-## 17. Workflow script skeleton (JavaScript)
+## 17. Workflow execution kernel (JavaScript)
 
-> Requires Claude Code v2.1.154+; available on all paid plans.
-> Workflows are **JavaScript orchestration scripts authored at runtime** — NOT YAML.
-> There is no `stages:`, `condition:`, or `parallel:` YAML key. Gate logic is JS conditionals.
-> MANDATORY: the prose fallback (§18) MUST be in the same skill file as a resilience fallback.
+> Requires Claude Code v2.1.154+. Workflows are **JavaScript orchestration scripts**, not YAML — no
+> `stages:`/`parallel:` keys; control flow is plain JS. The prose fallback (§18) MUST stay in this file as
+> the resume/disaster-recovery path (Workflows resume within-session only).
 >
-> How to use: paste this skeleton into the Workflow prompt, fill in all {VARIABLE} placeholders,
-> and ask Claude to save the completed script to `.claude/workflows/{REPO_PREFIX}-pipeline.js`.
-> Then trigger it via the `/workflows` view.
+> **Canonical pattern:** [`pipeline-kernel.reference.js`](pipeline-kernel.reference.js) — a correct, complete
+> execution kernel (research -> revise -> partition -> implement fan-out -> merge handoff). The CEO copies it,
+> fills the `{VARIABLE}` placeholders, and launches it at Step 3.1 (after intake + plan approval).
+>
+> **Hard facts the script MUST honor** (verified 2026-06-15 — GOAT-CEO-REWORK-DESIGN.md §B):
+> - Real API: `agent(prompt, opts)`, `parallel(thunks)`, `pipeline(items, ...stages)`, `phase()`, `log()`,
+>   `args`. NOT `agent({subagent_type, prompt})`; `parallel` takes THUNKS (`() => agent(...)`), not promises.
+> - **No Node/fs access** — the script cannot read files or `*.GATE` sentinels. Get the partition into the
+>   script via an agent that reads `IMPLEMENTATION-MANIFEST.json` and returns it through a `schema`. Resume is
+>   the durable journal (`resumeFromRunId`), not fs.
+> - **TaskCompleted hooks do NOT fire** for Workflow agents -> the test/review/audit gates are explicit STAGES
+>   (run-suite-and-throw; judge `{schema: VERDICT}` then check PASS). **PreToolUse and SubagentStop hooks DO
+>   fire** -> phase-gate, STOP, registry, commit-guard, `check_artifacts`, `check_partition` still enforce.
+> - **Merge stays CEO-manual** (Doctrine #1): the kernel fans OUT and returns the branch list; the CEO runs §D
+>   reconvergence and launches the review kernel. Fan-out and merge are separate runs (a Workflow can't pause
+>   for the CEO).
+
+The **review kernel** is a second, CEO-launched workflow (after merge + `IMPLEMENT.GATE`). It shows a
+`TaskCompleted` gate ported to an explicit STAGE — the judge's verdict gates the return:
 
 ```javascript
-// Workflow: {REPO_PREFIX} GOAT pipeline — {TASK_DESCRIPTION}
-// Save to: .claude/workflows/{REPO_PREFIX}-pipeline.js
-
-import fs from "fs";
-import path from "path";
-
 export const meta = {
-  name: "{REPO_PREFIX}-goat-pipeline",
-  description: "Full 6-phase GOAT pipeline for {REPO_PREFIX}: plan → research → implement → review → finalize",
-};
-
-const WORKSPACE = "agent-workspace";
-const gate = (name) => path.join(WORKSPACE, `${name}.GATE`);
-const gateExists = (name) => fs.existsSync(gate(name));
-
-// ── Phase 1: Plan ──────────────────────────────────────────────────────────
-// Skip if PLAN.GATE already present (resume-safe).
-if (!gateExists("PLAN")) {
-  await agent({
-    subagent_type: "team-architect",
-    prompt: `
-[Paste Architect template §5 here with variables filled.
- Deliverable: write agent-workspace/PLAN.md + agent-workspace/IMPLEMENTATION-MANIFEST.md.
- The TaskCompleted hook validates structure and writes agent-workspace/PLAN.GATE.]
-    `.trim(),
-  });
-  // Checkpoint: do not proceed until hook has written PLAN.GATE.
-  if (!gateExists("PLAN")) throw new Error("PLAN.GATE not written — planner did not complete.");
+  name: '{REPO_PREFIX}-goat-review',
+  description: 'Review kernel: dual verifiers -> completeness critic -> judge. Verdict gates the result.',
+  phases: [{ title: 'Review' }, { title: 'Judge' }],
 }
-
-// ── Phase 2: Research (parallel fan-out) ──────────────────────────────────
-if (!gateExists("RESEARCH")) {
-  await parallel([
-    agent({
-      subagent_type: "team-researcher",
-      prompt: `
-[Paste Codebase Researcher template §6 here with variables filled.]
-      `.trim(),
-    }),
-    agent({
-      subagent_type: "team-researcher",
-      prompt: `
-[Paste Technical Researcher template §7 here with variables filled.]
-      `.trim(),
-    }),
-  ]);
-
-  // Revision pass: architect reconciles researcher findings.
-  await agent({
-    subagent_type: "team-architect",
-    prompt: `
-[Revision pass prompt: read RESEARCH-LOG.md, resolve all annotations, confirm
- IMPLEMENTATION-MANIFEST.md still matches findings. Write RESEARCH.GATE when satisfied.]
-    `.trim(),
-  });
-
-  if (!gateExists("RESEARCH")) throw new Error("RESEARCH.GATE not written — research revision incomplete.");
+const VERDICT = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    verdict: { type: 'string', enum: ['PASS', 'FAIL'] },
+    findings: { type: 'array', items: { type: 'string' } },
+    escalate: { type: 'boolean' },
+  },
+  required: ['verdict', 'findings', 'escalate'],
 }
-
-// ── Phase 3: Implement (parallel worktrees) ────────────────────────────────
-// NOTE: isolation:worktree is in team-implementer frontmatter — active automatically.
-// CEO merges worktree branches after all implementers complete (Design §D).
-// IMPLEMENT.GATE is written by the CEO after the merge+test step, NOT by the script.
-if (!gateExists("IMPLEMENT")) {
-  // Fan-out: one agent() call per batch. Add batches below as needed.
-  // Parallel-safe batches (no shared files): list them all in parallel().
-  // Sequenced batches (shared file / order-dependent): chain as sequential await agent() calls.
-  await parallel([
-    agent({
-      subagent_type: "team-implementer",
-      prompt: `
-[Paste Implementer template §8, Batch 1 with variables filled.
- Remember: commit to your worktree branch only, not main.
- Report branch name + file list in your IMPLEMENTER REPORT.]
-      `.trim(),
-    }),
-    agent({
-      subagent_type: "team-implementer",
-      prompt: `
-[Paste Implementer template §8, Batch 2 with variables filled.]
-      `.trim(),
-    }),
-    // Add more agent() calls here for additional batches.
-  ]);
-
-  // The CEO performs the merge step outside this script (§D merge protocol).
-  // After successful merge + broad test suite, CEO writes IMPLEMENT.GATE manually.
-  // Execution pauses here until IMPLEMENT.GATE exists.
-  if (!gateExists("IMPLEMENT")) {
-    throw new Error(
-      "IMPLEMENT.GATE not written — CEO merge step pending. " +
-      "After merging all worktree branches and running the broad test suite, " +
-      "write agent-workspace/IMPLEMENT.GATE to resume this workflow."
-    );
-  }
+phase('Review')
+await parallel([
+  () => agent(`[Verifier A §11 correctness. Write the Review A verdict block; read >= the audit minimum of files.]`,
+              { label: 'review:A', agentType: 'team-verifier' }),
+  () => agent(`[Verifier B §12 test-quality + reward-hack audit. Write the Review B verdict block.]`,
+              { label: 'review:B', agentType: 'team-verifier' }),
+])
+await agent(`[Completeness critic §13: flag acceptance criteria neither reviewer covered.]`,
+            { label: 'review:critic', agentType: 'team-verifier', model: 'haiku' })
+phase('Judge')
+const judged = await agent(
+  `[Judge §14: read Review A/B + critic; issue a binding verdict. Bias-mitigated: grade end-state, ignore
+    order/length, escalate severity on weak/uncited evidence.]`,
+  { label: 'review:judge', agentType: 'team-verifier', model: 'opus', schema: VERDICT })
+// Gate-as-stage: check_review_gate.py (TaskCompleted) does NOT fire for Workflow agents, so the verdict
+// gates the result HERE. check_toolcall_audit can be re-added as a SubagentStop hook reading
+// agent_transcript_path (GOAT-CEO-REWORK-DESIGN.md §B / R3).
+if (!judged || judged.verdict !== 'PASS') {
+  return { ready: 'escalate', verdict: judged ? judged.verdict : 'NONE', findings: judged ? judged.findings : [] }
 }
-
-// ── Phase 4: Index (on merged main — no worktree) ─────────────────────────
-if (!gateExists("INDEX")) {
-  await agent({
-    subagent_type: "team-implementer",  // reused as index-updater role
-    prompt: `
-[Paste Index Updater template §10 here with variables filled.
- Run on merged main only. Deliverable: write agent-workspace/INDEX.GATE after
- codebase-index-tools check --all --format json returns 0 stale + 0 missing.]
-    `.trim(),
-  });
-
-  if (!gateExists("INDEX")) throw new Error("INDEX.GATE not written — index update incomplete.");
-}
-
-// ── Phase 5: Review (parallel) → Completeness Critic → Judge ─────────────
-// Ordering (B3 fix): reviewers run FIRST; critic+judge run AFTER both reviewer verdicts
-// exist in REVIEW-LOG.md. They do NOT condition on REVIEW.GATE — they CAUSE it.
-if (!gateExists("REVIEW")) {
-  // 5a: Dual reviewers in parallel.
-  await parallel([
-    agent({
-      subagent_type: "team-verifier",
-      prompt: `
-[Paste Verifier A template §11 (correctness perspective) with variables filled.
- Deliverable: write ## Review A verdict JSON block to agent-workspace/REVIEW-LOG.md.]
-      `.trim(),
-    }),
-    agent({
-      subagent_type: "team-verifier",
-      prompt: `
-[Paste Verifier B template §12 (test-quality perspective) with variables filled.
- Deliverable: write ## Review B verdict JSON block to agent-workspace/REVIEW-LOG.md.]
-      `.trim(),
-    }),
-  ]);
-
-  // Gate check: both reviewer verdict blocks must exist before critic/judge run.
-  const reviewLog = path.join(WORKSPACE, "REVIEW-LOG.md");
-  const reviewContent = fs.existsSync(reviewLog) ? fs.readFileSync(reviewLog, "utf8") : "";
-  const bothVerdictsPresent =
-    reviewContent.includes('"reviewer": "A"') && reviewContent.includes('"reviewer": "B"');
-  if (!bothVerdictsPresent) {
-    throw new Error("Both reviewer verdict JSON blocks must exist in REVIEW-LOG.md before critic/judge run.");
-  }
-
-  // 5b: Completeness critic — runs after both verdicts, before judge.
-  await agent({
-    subagent_type: "team-verifier",  // haiku variant via model override if desired
-    prompt: `
-[Paste Completeness Critic template §13 with variables filled.
- Deliverable: write ## Completeness Critic JSON block to agent-workspace/REVIEW-LOG.md.]
-    `.trim(),
-  });
-
-  // 5c: Judge — reads Review A, Review B, and completeness critic output.
-  // REVIEW.GATE is written by the judge (or by the check_review_gate.py hook on TaskCompleted).
-  await agent({
-    subagent_type: "team-verifier",  // opus variant; set model: opus in team-verifier or use a judge-specific agent
-    prompt: `
-[Paste Judge template §14 with variables filled.
- Deliverable: write ## Judge Verdict JSON block to agent-workspace/REVIEW-LOG.md.
- On PASS: write agent-workspace/REVIEW.GATE.
- On FAIL at iteration 2: write agent-workspace/ESCALATE_REQUIRED instead.]
-    `.trim(),
-  });
-
-  if (!gateExists("REVIEW")) {
-    if (fs.existsSync(path.join(WORKSPACE, "ESCALATE_REQUIRED"))) {
-      throw new Error("Review failed at iteration 2 — ESCALATE_REQUIRED set. Surface to operator.");
-    }
-    throw new Error("REVIEW.GATE not written — judge did not issue PASS.");
-  }
-}
-
-// ── Phase 6: Finalize (CEO step — not scripted here) ─────────────────────
-// CEO performs independently: run broad test suite, verify all *.GATE present,
-// commit via ceo-commit.sh, trigger type-2 roadmap update if applicable.
-// This script's job is done once REVIEW.GATE exists.
-console.log(
-  `Pipeline complete for ${"{REPO_PREFIX}"}. All GATE sentinels present. ` +
-  "CEO: run Phase 6 finalize steps (broad test suite + commit + roadmap update)."
-);
+return { ready: 'review-pass', findings: judged.findings,
+         nextCeoSteps: ['Write agent-workspace/REVIEW.GATE.', 'Run Phase 6: independent broad suite + commit + roadmap update.'] }
 ```
+
+> The prior inline 6-phase skeleton (which used the wrong `agent({subagent_type})` API and `fs`-based gate
+> checks that Workflows cannot run) has been replaced by `pipeline-kernel.reference.js`. The always-runnable
+> prose state-machine fallback follows in §18.
 
 ---
 
