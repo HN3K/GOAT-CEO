@@ -28,7 +28,7 @@ These define the pipeline workflow and agent role scripts:
 
 | File | Purpose |
 |------|---------|
-| `goat.md` | Main entry point — overseer orchestrates all 7 phases |
+| `goat.md` | Main entry point — overseer orchestrates all 6 phases |
 | `goat-plan.md` | Plan-only variant (Phases 1-2, stops before implementation) |
 | `goat-review.md` | Review-only variant (assumes implementation complete) |
 | `planner.md` | Planner role — creates/revises plans and manifests |

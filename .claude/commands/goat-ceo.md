@@ -61,6 +61,23 @@ If the operator has not explicitly asked for an unattended run, you are in Colla
 >
 > A directive goal does not waive intake. The CEO MUST NOT advance to Step 3 (autonomous execution) until Steps 1.0 → 1.3 AND Step 2 are fully complete and operator-confirmed. Reading a repo name in `$ARGUMENTS` is NOT a substitute for running Steps 1 and 2.
 
+### 1.0a — Enforcement Self-Check (pre-flight, run once — before Mode Selection)
+
+The HARD rows in `rules.md` are only real if the hooks in `.claude/settings.json` actually fire. Every hook invokes the literal interpreter `python` on PATH and is **fail-open** — so if `python` is missing, mis-named (`py`/`python3` only), or shadowed (e.g. the Windows Store stub), every gate silently no-ops and the harness treats that as "allow." A `python --version` probe alone is NOT sufficient proof: the harness may resolve a different interpreter than your shell. Verify enforcement **actively**, once, before anything else:
+
+1. **Interpreter.** Run `python --version`. It must report Python ≥ 3.8. Error / empty output / < 3.8 → record FAIL.
+2. **Live-fire the kill switch.** Write `agent-workspace/STOP` (content `SELFTEST`), then attempt a trivial gated action — `echo selftest` (Bash).
+   - The STOP message is shown and the `echo` is **blocked** → the hook chain is live → PASS.
+   - The `echo` **runs normally** → the hook chain is dead → FAIL.
+   Then clear it: `rm agent-workspace/STOP` (the STOP hook permits this exact clear command). Writing STOP is itself allowed because the file does not exist yet when that Write's PreToolUse fires.
+3. **Deny sanity (fail-closed check).** Confirm a legitimate scoped stage is NOT denied: `git add --dry-run .claude/settings.json` must succeed. If it is denied, a `permissions.deny` pattern is over-broad → record FAIL.
+
+**On all PASS:** continue silently to Step 1.0.
+
+**On any FAIL:** write `agent-workspace/ENFORCEMENT-DEGRADED.md` naming each failed check, and surface it to the operator immediately. Then:
+- **Collaborative mode** — you MAY continue (the operator is present to compensate), but treat EVERY `rules.md` HARD row as SOFT until enforcement is restored. Do not rely on a gate you just proved is dead.
+- **Unattended mode** — you MUST NOT engage the keep-going layer (Step 3.1) until the self-check passes. An unattended run with dead hooks has no safety net; halt and leave the degraded report for the operator.
+
 ### 1.0 — Mode Selection
 
 Check if `repo-registry.json` exists in the GOAT-CEO repo root.
