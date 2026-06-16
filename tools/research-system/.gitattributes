@@ -1,0 +1,15 @@
+# Normalize line endings: store LF in the repo and check out LF on every OS.
+# Silences "LF will be replaced by CRLF" warnings and prevents EOL-only diffs.
+* text=auto eol=lf
+
+# Explicit text types (defensive; covered by the rule above)
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.txt   text eol=lf
+
+# Binary/opaque — never touch
+*.png   binary
+*.jpg   binary
+*.pdf   binary

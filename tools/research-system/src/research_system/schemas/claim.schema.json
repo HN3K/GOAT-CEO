@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "JudgeVote": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "verdict": {
+          "$ref": "#/$defs/Verdict"
+        }
+      },
+      "required": [
+        "model",
+        "verdict"
+      ],
+      "title": "JudgeVote",
+      "type": "object"
+    },
+    "Verdict": {
+      "description": "Per-claim verification verdict (DESIGN \u00a73 component 6).",
+      "enum": [
+        "pending",
+        "supported",
+        "overreach",
+        "unsupported"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "judge_votes": {
+      "items": {
+        "$ref": "#/$defs/JudgeVote"
+      },
+      "title": "Judge Votes",
+      "type": "array"
+    },
+    "quote": {
+      "title": "Quote",
+      "type": "string"
+    },
+    "quote_present": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quote Present"
+    },
+    "source_id": {
+      "title": "Source Id",
+      "type": "string"
+    },
+    "subq_id": {
+      "title": "Subq Id",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/Verdict",
+      "default": "pending"
+    }
+  },
+  "required": [
+    "id",
+    "subq_id",
+    "text",
+    "source_id",
+    "quote"
+  ],
+  "title": "Claim",
+  "type": "object"
+}

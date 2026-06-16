@@ -320,6 +320,33 @@ If INDEX-UNAVAILABLE:
   No index tooling is present. Use direct Read/Grep/Glob tool calls to build context.
   Note INDEX-UNAVAILABLE in your RESEARCH-LOG.md findings header.
 
+## External research KB (REQUIRED check when RESEARCH-KB-AVAILABLE)
+
+Research-KB status: {RESEARCH_KB_STATUS}  (RESEARCH-KB-AVAILABLE | RESEARCH-KB-UNAVAILABLE)
+Shared KB root: {RESEARCH_KB_ROOT}   (e.g. <GOAT-CEO>/research-kb)
+
+If RESEARCH-KB-AVAILABLE — for EXTERNAL research (prior art, library semantics, approach trade-offs):
+  1. CHECK FIRST (reuse before researching — THIS IS THE POINT): read {RESEARCH_KB_ROOT}/INDEX.md and grep for
+     your subject. If a stored subject corpus covers your questions, CITE its synthesis.md + claims.jsonl in
+     RESEARCH-LOG.md instead of running fresh online research. A reused, already-verified finding is NOT a
+     SINGLE-SOURCE flag — it carries its own claim→quote→stored-source provenance. (Saves time + tokens; the KB
+     compounds across sessions, so online runs get rarer.)
+  2. If the KB does NOT cover it AND the subject is worth persisting (durable, reusable, auditable), run the
+     Research System (from GOAT-CEO/tools/research-system/, with PYTHONPATH=src) to capture + verify + store:
+       python scripts/run_capture.py  <sources.json> --research-root {RESEARCH_KB_ROOT} --question "<q>"
+       python scripts/run_research.py <subject-slug> "<question>"  --research-root {RESEARCH_KB_ROOT}
+     It captures sources IN FULL, ties each claim to an exact quoted span, cross-model verifies, abstains on weak
+     support. Then update the subject row in INDEX.md and cite ONLY verdict==supported claims ({slug, source_id,
+     quote, verdict}) in RESEARCH-LOG.md. COST: heavy model use (~$1–3/question) — only for subjects worth
+     keeping. (If a coding-standard you verify here is worth enforcing, flag it for rubric's codify flow — see
+     GOAT-CEO-REWORK-DESIGN.md §J.1.)
+  3. For a quick throwaway lookup (not worth persisting): use WebSearch/WebFetch or the deep-research skill — do
+     NOT spin up the capture pipeline.
+
+If RESEARCH-KB-UNAVAILABLE:
+  No research KB present. Use WebSearch/WebFetch / deep-research and record findings inline in RESEARCH-LOG.md as
+  today (ephemeral). Note RESEARCH-KB-UNAVAILABLE in your findings header.
+
 Follow every step in your role document. End with your completion signal in RESEARCH-LOG.md.
 
 ## Deliverable

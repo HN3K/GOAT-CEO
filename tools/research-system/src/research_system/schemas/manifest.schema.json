@@ -1,0 +1,99 @@
+{
+  "$defs": {
+    "CaptureStatus": {
+      "description": "Outcome of a capture attempt. Non-OK statuses keep failed sources visible\nto the gate so missing evidence cannot masquerade as covered (DESIGN \u00a74).",
+      "enum": [
+        "ok",
+        "empty",
+        "paywall",
+        "fetch_error",
+        "js_required"
+      ],
+      "title": "CaptureStatus",
+      "type": "string"
+    },
+    "SourceCatalogEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_subq_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Subq Ids",
+          "type": "array"
+        },
+        "capture_status": {
+          "$ref": "#/$defs/CaptureStatus",
+          "default": "ok"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "url"
+      ],
+      "title": "SourceCatalogEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
+    },
+    "question": {
+      "title": "Question",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceCatalogEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject",
+    "question"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+*.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# NOTE: Research/ corpora are intentionally tracked — the on-disk corpus IS the product.
+# Large captured corpora can be excluded per-subject later if needed.

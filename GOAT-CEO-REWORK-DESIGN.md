@@ -33,6 +33,7 @@ updates. When in doubt, prefer a native primitive over a bespoke one.
 | P11 | MCP tools | Surfaced via `ToolSearch` (deferred tools), schemas loaded on demand | Per-agent access to session-connected MCP servers | Re-implementing an integration the MCP server already provides |
 | P12 | Memory | `memory: project` frontmatter; file-based memory dir | Cross-session persistence of decisions/state | An ad-hoc state file no primitive reads |
 | P13 | External standards-grounding CLI (`rubric`) — **optional, opt-in per repo** | The `rubric` console-script CLI (deterministic surface: `context`, `check`/`enforce --no-llm`, `index`, `measure`), run as a HOST tool against any target repo | Ground implementers in conventions + symbol-level reuse before they write, and gate convention drift deterministically at integration — the standards/reuse layer GOAT-CEO otherwise lacks. **Cleared composition** (Rule 7): rubric wraps ast/ast-grep/Ruff/ESLint and owns a two-plane KB; it does NOT duplicate the Codebase-Index (different plane) and is used via its CLI only. Its own Claude Code hooks / `claude -p` LLM path are NOT used in-pipeline. See §I. | Re-implementing a linter/standards-enforcement layer by hand; hand-rolling a conventions KB |
+| P14 | External research-capture-and-verify CLI (Research System) — **optional, opt-in** | The vendored `tools/research-system/` engine (`run_capture`/`run_research`): capture web sources in full → claim-level exact-quote attribution → cross-model verify → abstain → synthesize | Build a reusable, auditable external-research KB (`research-kb/`) so researchers REUSE verified findings before re-running online research, and feed evidence-backed standards into rubric (§J). **Cleared composition** (Rule 7): wraps trafilatura/BM25/`claude -p`, owns an on-disk auditable corpus; does NOT duplicate the Codebase-Index (code plane), rubric (conventions plane), or the `deep-research` skill (ephemeral). Driven via its scripts only; inject GOAT's own LLM. Certifies traceability-to-source, not truth. See §J. | Re-implementing a web-capture/verification research pipeline by hand |
 
 **Retired hand-rolled mechanisms** (removed because a native primitive covers them — do not reintroduce):
 - **Scribe logger** (`team-ceo-scribe`) → the `claude agents` view + OTEL timeline cover observability natively (P2/P3). Tier-2 cross-repo decisions are logged directly by the CEO to `logs/<prefix>/cross-repo.log`.
@@ -386,3 +387,79 @@ print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components 
 **v1 landed (2026-06-15):** `rubric`/`rubricStatus` registry fields + Step 1.2 detection/bootstrap (`rubric init --no-claude`) + `{RUBRIC_STATUS}` grounding block in the implementer template (per-agent: runs `rubric context` before writing, reports `rubric check` violations) + a CEO-run conditional `RUBRIC.GATE` at Phase 3 integration + `rubric measure` baseline/delta in Phase 6 + doctrine rows in `rules.md`. v2 items (LLM review-lens via `team-verifier`, native self-heal gate, codify loop, cross-repo conventions) remain deferred.
 
 Note: in the CEO pipeline each implementer assembles its own grounding (runs `inject` + `rubric context` in its own context window — no shared file, so no competing-path concern). The single-`index-context.md`-artifact merge in §I.3 applies to the goat-team single-repo planner path; either way rubric's own context/SessionStart hooks stay disabled (`init --no-claude`).
+
+> **Cross-link to §J (rubric ← research):** a research subject run through the Research System can produce
+> verified, *sourced* coding-standard claims that distill into candidate rubric rules/exemplars via rubric's
+> `codify` / `.rubric/proposals/` flow — making rubric conventions evidence-backed ("we enforce X because
+> [stored source span]") rather than hand-asserted. Still human-approved (rubric never auto-merges proposals;
+> the Research System certifies faithfulness, not truth). See §J.1.
+
+---
+
+## §J — Optional integration: Research System (RESEARCH-KB-AVAILABLE)
+
+> **Status:** design of record (2026-06-15), v1 being built. **Vendored engine:** `tools/research-system/`
+> (commit `34ff457`, the 4.6M `Research/` corpora excluded). **Ledger:** P14. Backed by a 4-agent analysis pass.
+
+The Research System is an auditable **external-document** research engine: capture web/PDF sources in full →
+decompose → answer with claim-level **exact quotes** → cross-model verify (mechanical quote-match + 3-judge
+ensemble) → **abstain** rather than confabulate → deterministic synthesis. It adds a FOURTH, disjoint knowledge
+plane: Codebase-Index = internal code ("where"); rubric = conventions/reuse ("what to call"); **Research KB =
+external research ("why / prior art")**. It does NOT read code or verify repos.
+
+Its genuine, non-redundant value over the built-in `deep-research` skill and GOAT-CEO's Phase-2 research is
+**persistence + mechanical provenance**: a re-queryable corpus where every claim resolves to a verbatim span in
+a stored source, with honest abstention. It certifies **claim-level traceability to a stored source (faithfulness
++ provenance), NOT truth** — a claim faithfully grounded in a wrong source still passes; source quality and
+correctness stay a human judgment. (Doctrine must say "traceable to source," never "100% verifiable/true".)
+
+### §J.1 — The two payoff mechanics (why a 4th plane earns its keep)
+
+1. **Reuse-before-research (the compounding win).** Before commissioning an online research run, the technical
+   researcher queries the shared research KB. The system's own **abstention gate** decides whether the stored
+   corpus can answer the sub-questions with `min_support`: hit → cite the stored `synthesis.md`/`claims.jsonl`
+   and SKIP the online run (saves time + tokens); miss → it abstains, which is the trigger to research fresh and
+   capture it back. Over sessions the corpus compounds and online runs get rarer. The "enough hits" threshold is
+   the gate, not a guess.
+2. **Research → rubric standards (the cross-feature loop; see §I).** A subject like "evidence-based error-handling
+   conventions for Python services" yields verified, SOURCED claims; those distill into candidate rubric
+   rules/exemplars via rubric's `codify`/`.rubric/proposals/` flow, making rubric conventions evidence-backed with
+   provenance instead of hand-asserted. Human-approved (rubric never auto-merges; faithfulness != truth). This is
+   the one place the external-research plane touches code quality directly.
+
+### §J.2 — Load-bearing decisions
+1. **Opt-in, standalone — NOT auto-fired in a phase.** `claude -p` capture/verify ~ 60-100 serial calls
+   (~$1-3/question). The technical researcher invokes it deliberately for persist-worthy subjects; throwaway
+   lookups stay on WebSearch/`deep-research`.
+2. **Inject GOAT-CEO's own `LLMClient`.** `run_research(layout, question, llm, ...)` takes the client as a
+   parameter (the seam rubric lacked) — route research calls through GOAT's model, not nested `claude -p`.
+3. **Shared, cross-repo KB** at `<repo-root>/research-kb/` (gitignored like `logs/`). Research isn't owned by one
+   repo — the divergence from per-repo INDEX/rubric siting, and what makes findings reusable across repos/sessions.
+4. **Out of the per-write grounding path.** A Phase-2 *input* (read on demand by the technical researcher), never
+   injected into every implementer like index/rubric — keeps the planes disjoint (no third competing grounding block).
+5. **All-SOFT, NO `RESEARCH.GATE`.** Research is additive context, not a correctness gate. Findings feed the
+   EXISTING 5-condition convergence gate + Phase-5 judge as pre-verified inputs, EXEMPT from SINGLE-SOURCE
+   escalation (cross-model quote-match + ensemble already satisfies independent corroboration).
+6. **Vendor engine only** (`git archive HEAD :!Research`); no console-script -> run
+   `python scripts/run_research.py --research-root <kb>` from `tools/research-system/`.
+
+### §J.3 — v1 integration map (RESEARCH-KB-AVAILABLE, mirrors §I)
+
+| # | Where | Change |
+|---|---|---|
+| 1 | `repo-registry.json` + `goat-ceo.md §1.1` | `researchKb` bool + `researchKbStatus` + shared `researchKbRoot` |
+| 2 | `goat-ceo.md §1.2` intake | detect `tools/research-system` importable + `research-kb/` creatable; A/B bootstrap; `ro-reference` EXEMPT (may READ the shared KB) |
+| 3 | `templates.md §7` (technical researcher ONLY) | `{RESEARCH_KB_STATUS}` block: reuse-before-research -> drive `run_capture`/`run_research` for persist-worthy subjects -> cite `{slug, source_id, quote, verdict}` |
+| 4 | `templates.md` critic + judge | note: Research-System findings are pre-verified -> not SINGLE-SOURCE |
+| 5 | `research-kb/` + `.gitignore` + `INDEX.md` | shared corpus root (gitignored); subject catalog the researcher greps before researching |
+| 6 | `rules.md` (SOFT rows) + `§0` P14 + this §J | doctrine + design-of-record + ledger |
+| 7 | `§I` cross-link | research -> rubric codify (the §J.1.2 loop) |
+
+### §J.4 — caveats & risks
+- **Zero soak** (built 2026-06-13/14, no remote) -> pin the commit.
+- **`claude -p` cost** on capture/verify-heavy runs -> opt-in, gated to "worth persisting," cost-flagged; inject
+  GOAT's LLM to avoid nesting.
+- **Web discovery unreliable** (`discover.py` LIVE CAVEAT) -> pre-supply URLs for headless runs; `--discover` is opportunistic.
+- **`requires-python >= 3.11`**; capture can fail on JS/paywall (recorded as `capture_status`, visible to the gate).
+- **Three-KB fragmentation** -> mitigated by keeping the research corpus OUT of the grounding path (decision #4).
+- **Strains "no app code"** -> second vendored Python tool; accepted (P14 cleared composition, like rubric P13).

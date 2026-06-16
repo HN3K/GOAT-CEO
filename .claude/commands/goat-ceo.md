@@ -151,6 +151,9 @@ Display validation summary. Write `repo-registry.json`:
       "rubric": true,
       "rubricStatus": "RUBRIC-AVAILABLE",
       "rubricConventions": null,
+      "researchKb": true,
+      "researchKbStatus": "RESEARCH-KB-AVAILABLE",
+      "researchKbRoot": "<abs-path>/GOAT-CEO/research-kb",
       "lastSession": "ISO timestamp",
       "groups": []
     },
@@ -190,6 +193,7 @@ For each **read-write target** repo (`access: "rw"`), detect:
 - `codebase-index-tools` is installed/present (Python: `python -m codebase_index_tools status --format json`; Node: `node codebase-index-tools/cli.js status --format json`)
 - GOAT skill present (`.claude/commands/goat-team/` directory with `goat.md`)
 - **rubric (optional standards system):** `.rubric/` directory exists at the repo root AND the `rubric` CLI responds — run `rubric kb --kb .rubric/kb --repo <path>`. rubric is a HOST tool: it need not be installed inside the target repo, only on the operator's PATH, invoked with `--repo <path>`. rubric is **vendored at `GOAT-CEO/tools/rubric/`** — if the CLI is not yet on PATH, install it from there with `pip install -e "tools/rubric[gate,retrieval]"` (see `tools/rubric/VENDORED.md`).
+- **Research System (optional external-research KB):** `tools/research-system/` is present AND importable (`PYTHONPATH=tools/research-system/src python -c "import research_system"` succeeds) AND a shared `research-kb/` exists or is creatable at the GOAT-CEO repo root. **Vendored** at `tools/research-system/` — install with `pip install -e "tools/research-system[capture,retrieval,llm]"` (Python ≥ 3.11; see `tools/research-system/VENDORED.md`). Unlike per-repo capabilities, the research KB is **shared / cross-repo** (sited at `<GOAT-CEO>/research-kb/`), so this is detected once per session, not per repo.
 
 For each repo, record one of two states in `repo-registry.json` under `"indexStatus"`:
 - **INDEX-AVAILABLE** — `Codebase-Index/` + tooling both present and responding. Downstream agents MUST use `search`/`inject`/`check` for context.
@@ -198,6 +202,10 @@ For each repo, record one of two states in `repo-registry.json` under `"indexSta
 Independently, record the rubric status in `repo-registry.json` under `"rubricStatus"`:
 - **RUBRIC-AVAILABLE** — `.rubric/` KB + `rubric` CLI both respond. Implementers run `rubric context` for grounding before writing; the CEO runs the conditional `RUBRIC.GATE` (`rubric check`) at Phase-3 integration.
 - **RUBRIC-UNAVAILABLE** — no `.rubric/` KB or no CLI. Standards grounding/gate are skipped. rubric is OPTIONAL — its absence never blocks the pipeline.
+
+Independently, record the research-KB status under `"researchKbStatus"` (SHARED across all `rw` repos; set each repo's `"researchKbRoot"` to `<GOAT-CEO>/research-kb`):
+- **RESEARCH-KB-AVAILABLE** — the Research System engine imports and `research-kb/` is present/creatable. The technical researcher (templates §7) CHECKS the KB before commissioning online research (reuse-before-research) and captures persist-worthy subjects into it.
+- **RESEARCH-KB-UNAVAILABLE** — engine missing or deps not installed. Researchers use WebSearch / the `deep-research` skill as today (ephemeral). OPTIONAL — never blocks the pipeline.
 
 For any repo with missing components, present:
 
@@ -213,6 +221,10 @@ For any repo with missing components, present:
 > B) Skip (records RUBRIC-UNAVAILABLE; no grounding/gate for this repo)"
 
 > **Optional real-time self-heal (advanced):** for a RUBRIC-AVAILABLE repo whose implementers should self-correct standards violations DURING their turn, copy `.claude/hooks/rubric_heal_gate.py` from GOAT-CEO into the target repo's `.claude/hooks/` and wire it as a PostToolUse `Edit|Write` hook. It is CAPPED (heals ≤2 cycles/file, then degrades to advisory + logs to `RUBRIC-DEGRADED.md`) so it cannot thrash an implementer past `maxTurns`. Default flow does NOT install this — the CEO-run `RUBRIC.GATE` at integration is the baseline; this is an opt-in upgrade.
+
+> **For the shared Research KB** (if absent and the operator wants a reusable, verifiable external-research KB), offer:
+> A) Bootstrap — `pip install -e "tools/research-system[capture,retrieval,llm]"`, create `<GOAT-CEO>/research-kb/`, and seed `research-kb/INDEX.md` (the subject catalog the technical researcher greps before researching). The KB is SHARED across every repo this session and persists across sessions — its whole value is that online research runs get rarer as it fills.
+> B) Skip (records RESEARCH-KB-UNAVAILABLE; researchers use WebSearch / the `deep-research` skill as today).
 
 **STOP HERE** for each repo needing setup. Wait for user response.
 

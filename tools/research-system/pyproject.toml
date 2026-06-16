@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "research-system"
+version = "0.0.1"
+description = "Auditable, low-hallucination AI research system with on-disk source capture and per-claim verification"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7",
+]
+
+# Phase-scoped optional deps — installed when their phase starts (see ROADMAP.md).
+[project.optional-dependencies]
+capture = ["trafilatura>=1.8", "httpx>=0.27", "pypdf>=4"]   # Phase 1
+retrieval = ["rank-bm25>=0.2.2"]                # Phase 2
+llm = ["anthropic>=0.40"]                        # Phase 2+
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/research_system"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

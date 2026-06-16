@@ -10,3 +10,7 @@ __pycache__/
 # Local-only state — each user generates their own
 repo-registry.json
 .claude/agent-memory/
+
+# Shared external-research KB corpus (Research System, RESEARCH-KB-AVAILABLE) — grows per session,
+# not committed (like logs/). The vendored engine is tools/research-system/; the corpus is the product.
+research-kb/
