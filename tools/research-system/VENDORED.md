@@ -4,7 +4,7 @@ A **vendored snapshot** of the Research System engine, bundled into GOAT-CEO so 
 the optional `RESEARCH-KB-AVAILABLE` capability (the verifiable external-research KB) **without obtaining
 the Research System separately**. GOAT-CEO drives it via its scripts; this is the source that provides them.
 
-- **Source project:** Research System (first-party; local repo `KadenSeriousProjects/Research System`)
+- **Source project:** the first-party Research System project (vendored here from a local checkout; no public remote yet)
 - **Vendored commit:** `34ff457c071c2416e85a01bc73d4a333307a5cad`
 - **Vendored on:** 2026-06-15
 - **License:** MIT (same as GOAT-CEO — first-party code)

@@ -4,7 +4,7 @@ This directory is a **vendored snapshot** of the `rubric` standards-grounding to
 GOAT-CEO so a fresh clone can use the optional rubric integration **without obtaining rubric
 separately**. GOAT-CEO drives rubric via its CLI; this is the source that provides that CLI.
 
-- **Source project:** `rubric` (first-party; local repo `KadenSeriousProjects/rubric`)
+- **Source project:** the first-party `rubric` project (vendored here from a local checkout; no public remote yet)
 - **Vendored commit:** `7d0041b6144eed678fade9c14acb08e05648332b`
 - **Vendored on:** 2026-06-15
 - **License:** MIT (same as GOAT-CEO — first-party code)
