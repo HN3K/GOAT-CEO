@@ -33,10 +33,13 @@ GOAT-CEO uses **only** `run_capture.py` + `run_research.py` (capture → decompo
 quotes → cross-model verify → abstain → synthesize). The `benchmark.py` / `tier_sweep.py` / `conformal.py`
 / `external.py` modules are part of the upstream product's self-validation and are NOT driven by GOAT-CEO.
 
-**Billing:** by default the engine calls the model via `claude -p` (subscription; it strips
-`ANTHROPIC_API_KEY`/`AUTH_TOKEN`). When driven from inside GOAT-CEO, prefer injecting GOAT-CEO's own
-`LLMClient` (the `research_system.llm.LLMClient` Protocol — `run_research(layout, question, llm, ...)`
-takes it as a parameter) to avoid nested `claude -p` calls. ~$1–3 subscription credit per research question.
+**Billing:** by default the engine calls the model via `claude -p` — the **Claude subscription** (it strips
+`ANTHROPIC_API_KEY`/`AUTH_TOKEN` so it never silently hits the paid API). ~$1–3 subscription credit per research
+question. The backend is the `research_system.llm.LLMClient` Protocol — `run_research(layout, question, llm, ...)`
+takes the client as a parameter, so it is swappable (per-token `AnthropicClient`, or a local/hybrid client you
+write) without engine changes. NOTE: the engine is a separate Python process — it cannot reuse a running Claude
+Code session's model; `claude -p` IS how it uses the subscription. The default's only cost beyond credit is
+subprocess nesting (~60–100 serial `claude -p` spawns/run) when an agent drives it.
 
 See `README.md` → External research KB, `GOAT-CEO-REWORK-DESIGN.md §J`, and the engine's own `DESIGN.md`.
 

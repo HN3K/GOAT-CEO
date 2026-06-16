@@ -33,7 +33,7 @@ updates. When in doubt, prefer a native primitive over a bespoke one.
 | P11 | MCP tools | Surfaced via `ToolSearch` (deferred tools), schemas loaded on demand | Per-agent access to session-connected MCP servers | Re-implementing an integration the MCP server already provides |
 | P12 | Memory | `memory: project` frontmatter; file-based memory dir | Cross-session persistence of decisions/state | An ad-hoc state file no primitive reads |
 | P13 | External standards-grounding CLI (`rubric`) — **optional, opt-in per repo** | The `rubric` console-script CLI (deterministic surface: `context`, `check`/`enforce --no-llm`, `index`, `measure`), run as a HOST tool against any target repo | Ground implementers in conventions + symbol-level reuse before they write, and gate convention drift deterministically at integration — the standards/reuse layer GOAT-CEO otherwise lacks. **Cleared composition** (Rule 7): rubric wraps ast/ast-grep/Ruff/ESLint and owns a two-plane KB; it does NOT duplicate the Codebase-Index (different plane) and is used via its CLI only. Its own Claude Code hooks / `claude -p` LLM path are NOT used in-pipeline. See §I. | Re-implementing a linter/standards-enforcement layer by hand; hand-rolling a conventions KB |
-| P14 | External research-capture-and-verify CLI (Research System) — **optional, opt-in** | The vendored `tools/research-system/` engine (`run_capture`/`run_research`): capture web sources in full → claim-level exact-quote attribution → cross-model verify → abstain → synthesize | Build a reusable, auditable external-research KB (`research-kb/`) so researchers REUSE verified findings before re-running online research, and feed evidence-backed standards into rubric (§J). **Cleared composition** (Rule 7): wraps trafilatura/BM25/`claude -p`, owns an on-disk auditable corpus; does NOT duplicate the Codebase-Index (code plane), rubric (conventions plane), or the `deep-research` skill (ephemeral). Driven via its scripts only; inject GOAT's own LLM. Certifies traceability-to-source, not truth. See §J. | Re-implementing a web-capture/verification research pipeline by hand |
+| P14 | External research-capture-and-verify CLI (Research System) — **optional, opt-in** | The vendored `tools/research-system/` engine (`run_capture`/`run_research`): capture web sources in full → claim-level exact-quote attribution → cross-model verify → abstain → synthesize | Build a reusable, auditable external-research KB (`research-kb/`) so researchers REUSE verified findings before re-running online research, and feed evidence-backed standards into rubric (§J). **Cleared composition** (Rule 7): wraps trafilatura/BM25/`claude -p`, owns an on-disk auditable corpus; does NOT duplicate the Codebase-Index (code plane), rubric (conventions plane), or the `deep-research` skill (ephemeral). Driven via its scripts; LLM backend is the Claude subscription (`claude -p`) by default, swappable via the `LLMClient` seam. Certifies traceability-to-source, not truth. See §J. | Re-implementing a web-capture/verification research pipeline by hand |
 
 **Retired hand-rolled mechanisms** (removed because a native primitive covers them — do not reintroduce):
 - **Scribe logger** (`team-ceo-scribe`) → the `claude agents` view + OTEL timeline cover observability natively (P2/P3). Tier-2 cross-repo decisions are logged directly by the CEO to `logs/<prefix>/cross-repo.log`.
@@ -431,8 +431,16 @@ correctness stay a human judgment. (Doctrine must say "traceable to source," nev
 1. **Opt-in, standalone — NOT auto-fired in a phase.** `claude -p` capture/verify ~ 60-100 serial calls
    (~$1-3/question). The technical researcher invokes it deliberately for persist-worthy subjects; throwaway
    lookups stay on WebSearch/`deep-research`.
-2. **Inject GOAT-CEO's own `LLMClient`.** `run_research(layout, question, llm, ...)` takes the client as a
-   parameter (the seam rubric lacked) — route research calls through GOAT's model, not nested `claude -p`.
+2. **Backend via the `LLMClient` seam — v1 uses the Claude *subscription*.** The default `ClaudeCLIClient`
+   calls `claude -p` (the SAME subscription GOAT-CEO runs on — no per-token cost, full verification quality).
+   The engine runs as a separate Python process, so it CANNOT reuse the orchestrator's in-session model; the
+   realistic backends are `claude -p` (subscription), the per-token Anthropic API, or a local server. Because
+   `run_research(layout, question, llm, ...)` takes the client as a parameter, the backend is swappable without
+   engine changes (e.g. a local+Claude *hybrid* — local for decompose/answer, but keep the 3-judge verify on a
+   strong model or the "verified" guarantee degrades). The only downside of the default is subprocess nesting
+   overhead (~60–100 serial `claude -p` spawns when an agent drives it) — accepted because runs are opt-in and
+   gated to "worth persisting." (Earlier drafts said "route through GOAT's own model"; that was imprecise — a
+   separate process can't tap the in-session model; `claude -p` IS how it uses the subscription.)
 3. **Shared, cross-repo KB** at `<repo-root>/research-kb/` (gitignored like `logs/`). Research isn't owned by one
    repo — the divergence from per-repo INDEX/rubric siting, and what makes findings reusable across repos/sessions.
 4. **Out of the per-write grounding path.** A Phase-2 *input* (read on demand by the technical researcher), never
@@ -457,8 +465,9 @@ correctness stay a human judgment. (Doctrine must say "traceable to source," nev
 
 ### §J.4 — caveats & risks
 - **Zero soak** (built 2026-06-13/14, no remote) -> pin the commit.
-- **`claude -p` cost** on capture/verify-heavy runs -> opt-in, gated to "worth persisting," cost-flagged; inject
-  GOAT's LLM to avoid nesting.
+- **`claude -p` subscription cost + subprocess nesting** on capture/verify-heavy runs -> opt-in, gated to "worth
+  persisting," cost-flagged. v1 uses the subscription (default `ClaudeCLIClient`); a per-token API or local+Claude
+  hybrid is a swap via the `LLMClient` seam if cost/nesting ever bites.
 - **Web discovery unreliable** (`discover.py` LIVE CAVEAT) -> pre-supply URLs for headless runs; `--discover` is opportunistic.
 - **`requires-python >= 3.11`**; capture can fail on JS/paywall (recorded as `capture_status`, visible to the gate).
 - **Three-KB fragmentation** -> mitigated by keeping the research corpus OUT of the grounding path (decision #4).
