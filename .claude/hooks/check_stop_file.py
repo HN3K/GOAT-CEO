@@ -7,9 +7,11 @@ with a bare `Remove-Item`/`rm`/`del ... STOP`, which this hook explicitly allows
 can resume.
 
 Wire at PreToolUse with matcher "Bash|PowerShell|Write|Edit". For a multi-repo CEO session
-you may ALSO wire this at user scope (~/.claude/settings.json) with absolute STOP paths so
-it reaches teammate sessions rooted in other repositories; in that deployment, add each
-repo's `agent-workspace/STOP` to STOP_PATHS.
+the STOP set is derived automatically: GOAT-CEO's own `agent-workspace/STOP` is always
+covered, and — if `repo-registry.json` is present at the GOAT-CEO root — every registered
+repo's `<repo-root>/agent-workspace/STOP` is added too, so the kill switch reaches teammate
+sessions rooted in other repositories without manual user-scope wiring. (You may still ALSO
+wire this at user scope for belt-and-suspenders.)
 
 Contract: exit 0 = allow; exit 2 = BLOCK (stderr is shown to the agent).
 Design rule: FAIL OPEN — any internal error allows the call. Keep this dependency-free.
@@ -20,7 +22,40 @@ import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STOP_PATHS = [os.path.join(REPO_ROOT, "agent-workspace", "STOP")]
+REGISTRY_PATH = os.path.join(REPO_ROOT, "repo-registry.json")
+
+
+def _registry_stop_paths():
+    """Derive `<repo-root>/agent-workspace/STOP` for every registered repo.
+
+    repo-registry.json shape: {"repos": {"<name>": {"path"|"root": "<dir>", ...}}}.
+    Best-effort and exception-safe: a malformed/absent registry yields no extra paths
+    (the caller still has the GOAT-CEO default), preserving fail-open behavior.
+    """
+    paths = []
+    try:
+        if not os.path.exists(REGISTRY_PATH):
+            return paths
+        with open(REGISTRY_PATH, "r", encoding="utf-8", errors="replace") as fh:
+            reg = json.load(fh)
+        repos = reg.get("repos")
+        # Accept either {"repos": {...}} or a bare top-level mapping of repos.
+        if not isinstance(repos, dict):
+            repos = reg if isinstance(reg, dict) else {}
+        for entry in repos.values():
+            if not isinstance(entry, dict):
+                continue
+            root = entry.get("root") or entry.get("path")
+            if not root or not isinstance(root, str):
+                continue
+            paths.append(os.path.join(root, "agent-workspace", "STOP"))
+    except Exception:
+        return []  # never let registry parsing break the kill switch
+    return paths
+
+
+# Always cover GOAT-CEO's own STOP; add registered repos' STOP files when known.
+STOP_PATHS = [os.path.join(REPO_ROOT, "agent-workspace", "STOP")] + _registry_stop_paths()
 
 # Allow a bare removal command (no chaining, nothing else on the line) targeting a STOP
 # file so the orchestrator can clear the stop and resume.

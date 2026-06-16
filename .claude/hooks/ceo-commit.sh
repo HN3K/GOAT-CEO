@@ -9,10 +9,12 @@
 #   - Stages ONLY the listed paths (git add <pathspec>...)
 #   - Commits with the provided message
 #
-# This is the ONLY permitted commit path for the CEO.  It is listed in
-# settings.json permissions.allow so it can bypass the Bash(git commit *)
-# deny rule.  The deny + allow pattern keeps the path narrow: only this
-# wrapper can commit; no subagent can run git commit directly.
+# This wrapper is a CONVENIENCE / CONVENTION, not a settings-level-enforced path.
+# There is NO permissions.allow/git-commit-deny pair in settings.json (deny beats
+# allow in Claude Code, which would have locked the CEO out of its own commits).
+# Commit discipline is instead enforced by the fail-open guard_git_commit.py hook
+# (warns on raw `git commit`/`git push`) plus the single-committer convention.
+# All this script does is keep staging pathspec-scoped — it never runs git add -A/.
 #
 # Exit codes:  0 = success; 1 = validation error (message to stderr).
 #

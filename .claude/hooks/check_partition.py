@@ -21,12 +21,24 @@ blocks. Dependency-free (stdlib only).
 Validation rules:
   1. JSON parses and has a list `batches`.
   2. Each batch has a unique `id` and a list `files`.
-  3. Every independent batch (`blockedBy` empty/absent) has `files[]` pairwise-disjoint
-     from every other independent batch.
-  4. Every `blockedBy` entry references an existing batch id (no dangling/cyclic-by-typo).
-  5. At most one `coordinatorBatch`; if set it must name an existing batch, and a batch
-     with `ownsSharedResources: true` should be that coordinator. (Advisory - a mismatch
-     is reported but, for a hook, only the disjointness rule (#3) hard-blocks.)
+  3. Every independent batch (no `dependsOn`/`blockedBy`) is pairwise NON-OVERLAPPING with
+     every other independent batch, where overlap is computed over NORMALIZED file AND
+     directory claims and includes DIRECTORY-CONTAINMENT (batch A's dir `src/` overlaps
+     batch B's file `src/foo.py` or its dir `src/sub/`).
+  4. Every `dependsOn`/`blockedBy` entry references an existing batch id.
+  5. (v2, HARD) No `sharedResources` entry may be claimed by more than one batch.
+  6. (v2, HARD) A batch (or the manifest) with `requiresCoordinator: true` must name a
+     coordinator (`coordinatorBatch` at the manifest level, or `coordinator`/
+     `coordinatorBatch` on the batch) that resolves to an existing batch id.
+  7. `coordinatorBatch`, if set, must name an existing batch (HARD). Legacy
+     `ownsSharedResources` consistency stays advisory.
+
+Path normalization (rule 3 & 5): casefold (case-insensitive FS), strip leading `./`,
+collapse `\` to `/`, collapse repeated `/`, strip a trailing `/` for comparison.
+
+Back-compat: v1 manifests (only `files[]`, `blockedBy`, `coordinatorBatch`) validate
+unchanged. v2 adds `directories[]`, `sharedResources[]`, `requiresCoordinator`, and a
+`conflictPolicy` object (the last is descriptive metadata; not enforced beyond parsing).
 """
 import json
 import os
@@ -34,6 +46,63 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MANIFEST_PATH = os.path.join(REPO_ROOT, "agent-workspace", "IMPLEMENTATION-MANIFEST.json")
+
+
+def _norm_path(p):
+    """Normalize a path for case/separator/`./`-insensitive comparison."""
+    if not isinstance(p, str):
+        return ""
+    s = p.strip().replace("\\", "/")
+    while s.startswith("./"):
+        s = s[2:]
+    while "//" in s:
+        s = s.replace("//", "/")
+    s = s.rstrip("/")
+    return s.casefold()
+
+
+def _deps(b):
+    """Dependency edges for a batch — supports both v2 `dependsOn` and v1 `blockedBy`."""
+    out = []
+    for key in ("dependsOn", "blockedBy"):
+        v = b.get(key)
+        if isinstance(v, list):
+            out.extend(v)
+    return out
+
+
+def _is_contained(child, parent):
+    """True if normalized path `child` is the same as, or lives under, directory `parent`."""
+    if not child or not parent:
+        return False
+    return child == parent or child.startswith(parent + "/")
+
+
+def _claims(b):
+    """Return (files_set, dirs_set) of normalized path claims for a batch."""
+    files = {_norm_path(f) for f in (b.get("files") or []) if _norm_path(f)}
+    dirs = {_norm_path(d) for d in (b.get("directories") or []) if _norm_path(d)}
+    return files, dirs
+
+
+def _overlap(a, c):
+    """Normalized overlap between two batches: shared files/dirs AND dir-containment."""
+    fa, da = _claims(a)
+    fc, dc = _claims(c)
+    hits = set()
+    # Direct file/dir name collisions.
+    hits |= (fa & fc)
+    hits |= (da & dc)
+    # Directory containment: a's directory contains c's file or dir (and vice-versa).
+    for d in da:
+        for p in (fc | dc):
+            if _is_contained(p, d):
+                hits.add(p)
+    for d in dc:
+        for p in (fa | da):
+            if _is_contained(p, d):
+                hits.add(p)
+    return hits
 
 
 def validate(manifest):
@@ -57,6 +126,8 @@ def validate(manifest):
             ids.append(bid)
         if not isinstance(b.get("files", []), list):
             errors.append("batch '{}' has a non-list 'files'".format(bid))
+        if not isinstance(b.get("directories", []), list):
+            errors.append("batch '{}' has a non-list 'directories'".format(bid))
 
     dupe = set(x for x in ids if ids.count(x) > 1)
     if dupe:
@@ -64,41 +135,79 @@ def validate(manifest):
 
     id_set = set(ids)
 
-    # Rule 4 - blockedBy references resolve.
+    # Rule 4 - dependency references resolve (dependsOn or blockedBy).
     for b in batches:
         if not isinstance(b, dict):
             continue
-        for dep in (b.get("blockedBy") or []):
+        for dep in _deps(b):
             if dep not in id_set:
                 errors.append(
-                    "batch '{}' blockedBy references unknown id '{}'".format(b.get("id"), dep)
+                    "batch '{}' depends on unknown id '{}'".format(b.get("id"), dep)
                 )
 
-    # Rule 3 - independent batches must be pairwise file-disjoint.
+    # Rule 3 - independent batches must be pairwise non-overlapping (normalized + dir-contain).
     independent = [
         b for b in batches
-        if isinstance(b, dict) and not (b.get("blockedBy") or [])
+        if isinstance(b, dict) and not _deps(b)
     ]
     for i in range(len(independent)):
         for j in range(i + 1, len(independent)):
             a, c = independent[i], independent[j]
-            fa = set(a.get("files", []) or [])
-            fc = set(c.get("files", []) or [])
-            overlap = fa & fc
+            overlap = _overlap(a, c)
             if overlap:
                 errors.append(
-                    "independent batches '{}' and '{}' overlap on files: {} "
-                    "(independent batches merge together and test once - they MUST be "
-                    "disjoint; give one of them a blockedBy dependency on the other, or "
-                    "merge them into a single batch)".format(
+                    "independent batches '{}' and '{}' overlap on path(s): {} "
+                    "(file/dir collision or directory-containment; independent batches merge "
+                    "together and test once - they MUST be disjoint; give one a dependsOn the "
+                    "other, or merge them).".format(
                         a.get("id"), c.get("id"), ", ".join(sorted(overlap))
                     )
                 )
 
-    # Rule 5 - coordinator consistency (advisory).
+    # Rule 5 (v2, HARD) - no sharedResource claimed by more than one batch.
+    shared_claims = {}
+    for b in batches:
+        if not isinstance(b, dict):
+            continue
+        for res in (b.get("sharedResources") or []):
+            key = _norm_path(res) if isinstance(res, str) else None
+            if not key:
+                continue
+            shared_claims.setdefault(key, []).append(b.get("id"))
+    for res, claimants in shared_claims.items():
+        if len(claimants) > 1:
+            errors.append(
+                "sharedResource '{}' is claimed by more than one batch ({}); a shared "
+                "resource must have a single owner.".format(res, ", ".join(str(x) for x in claimants))
+            )
+
+    # Rule 7 (HARD) - coordinatorBatch, if set, must resolve.
     coordinator = manifest.get("coordinatorBatch")
     if coordinator and coordinator not in id_set:
-        warnings.append("coordinatorBatch '{}' is not an existing batch id".format(coordinator))
+        errors.append("coordinatorBatch '{}' is not an existing batch id".format(coordinator))
+
+    # Rule 6 (v2, HARD) - requiresCoordinator:true demands a declared, resolvable coordinator.
+    def _has_resolvable_coordinator(batch=None):
+        cands = [coordinator]
+        if batch is not None:
+            cands += [batch.get("coordinator"), batch.get("coordinatorBatch")]
+        return any(c and c in id_set for c in cands)
+
+    if manifest.get("requiresCoordinator") is True and not _has_resolvable_coordinator():
+        errors.append(
+            "manifest sets requiresCoordinator:true but declares no coordinatorBatch that "
+            "resolves to an existing batch id."
+        )
+    for b in batches:
+        if isinstance(b, dict) and b.get("requiresCoordinator") is True:
+            if not _has_resolvable_coordinator(b):
+                errors.append(
+                    "batch '{}' sets requiresCoordinator:true but no coordinator "
+                    "(batch.coordinator / manifest.coordinatorBatch) resolves to an "
+                    "existing batch id.".format(b.get("id"))
+                )
+
+    # Legacy advisory - ownsSharedResources consistency.
     owners = [b.get("id") for b in batches if isinstance(b, dict) and b.get("ownsSharedResources")]
     if len(owners) > 1:
         warnings.append("more than one batch sets ownsSharedResources: {}".format(", ".join(owners)))

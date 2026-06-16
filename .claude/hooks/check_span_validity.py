@@ -31,6 +31,7 @@ import sys
 GATED_ROLES = {"team-verifier"}
 REVIEWER_MARKER = re.compile(r'"reviewer"\s*:\s*"(A|B)"')
 MIN_QUOTE = 12  # non-whitespace chars; below this a quote is too trivial to adjudicate
+LINE_WINDOW = 3  # the cited quote must appear within cited_line ± this many lines
 
 # A cited-span object: {"file": "...", "line": <n|null>, "quote": "..."} in any field order.
 _SPAN_RE = re.compile(
@@ -95,6 +96,40 @@ def _extract_spans(text):
     return spans
 
 
+def _parse_line(line):
+    """Coerce the cited `line` (str/int/None/'null') to an int, or None if absent."""
+    if line is None:
+        return None
+    try:
+        if isinstance(line, str):
+            line = line.strip()
+            if line.lower() == "null" or line == "":
+                return None
+        return int(line)
+    except (TypeError, ValueError):
+        return None
+
+
+def _quote_in_window(quote, content, cited_line, window=LINE_WINDOW):
+    """True if normalized `quote` appears within cited_line ± window of `content`.
+
+    A quote may itself span multiple lines, so we slide a window over the file and test
+    each window-join against the quote. If cited_line is None/out-of-range we cannot
+    line-anchor, so we fall back to whole-file containment (substring) — the placeholder
+    and MIN_QUOTE guards already filter trivial quotes, and a missing line is the
+    reviewer's omission, not a fabrication we can localize."""
+    nq = _norm(quote)
+    if not nq:
+        return True  # nothing substantive to check
+    lines = content.splitlines()
+    if cited_line is None or cited_line < 1 or cited_line > len(lines):
+        return nq in _norm(content)  # cannot anchor — fall back to anywhere-in-file
+    lo = max(0, cited_line - 1 - window)
+    hi = min(len(lines), cited_line - 1 + window + 1)
+    window_text = "\n".join(lines[lo:hi])
+    return nq in _norm(window_text)
+
+
 def _is_placeholder(file_, quote):
     if not file_ or not quote:
         return True
@@ -136,7 +171,20 @@ def main():
 
         spans = _extract_spans(assistant)
         if not spans:
-            return 0  # reviewer cited no structured spans — nothing to mechanically validate
+            # C7(a) — close the no-spans dodge. A confirmed A/B reviewer that emitted a
+            # verdict but ZERO structured cited_spans is blocked: a verdict must be backed
+            # by at least one checkable, line-anchored citation.
+            try:
+                sys.stderr.write(
+                    "CITATION SPAN BLOCK: your A/B verdict carries ZERO structured cited_spans. "
+                    "A correctness verdict must cite at least one concrete code span the way the "
+                    "review template specifies — {\"file\": \"path\", \"line\": N, \"quote\": "
+                    "\"exact code\"} — so the claim is mechanically checkable. Add the span(s) you "
+                    "actually inspected and re-issue your verdict."
+                )
+            except Exception:
+                pass  # never let an I/O failure downgrade a block to an allow
+            return 2
 
         fabricated = []
         for sp in spans:
@@ -148,9 +196,17 @@ def main():
             if content is None:
                 fabricated.append("{} (cited file not found)".format(f))
                 continue
-            if _norm(q) not in _norm(content):
+            cited_line = _parse_line(sp.get("line"))
+            # C7(b) — validate within the cited line window (± LINE_WINDOW), not anywhere.
+            if not _quote_in_window(q, content, cited_line):
+                where = (
+                    "near line {} (±{})".format(cited_line, LINE_WINDOW)
+                    if cited_line is not None else "anywhere in file"
+                )
                 fabricated.append(
-                    "{}:{} — cited span not found in file: {!r}".format(f, sp.get("line"), q[:80])
+                    "{}:{} — cited span not found {}: {!r}".format(
+                        f, sp.get("line"), where, q[:80]
+                    )
                 )
 
         if fabricated:

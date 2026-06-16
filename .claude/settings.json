@@ -10,7 +10,27 @@
       "Bash(git add .)",
       "Bash(git add ./)",
       "Edit(**/.env)",
-      "Write(**/.env)"
+      "Write(**/.env)",
+      "Edit(**/.env.local)",
+      "Write(**/.env.local)",
+      "Edit(**/.env.*.local)",
+      "Write(**/.env.*.local)",
+      "Edit(**/.npmrc)",
+      "Write(**/.npmrc)",
+      "Edit(**/.pypirc)",
+      "Write(**/.pypirc)",
+      "Edit(**/secrets.json)",
+      "Write(**/secrets.json)",
+      "Edit(**/*.pem)",
+      "Write(**/*.pem)",
+      "Edit(**/*.key)",
+      "Write(**/*.key)",
+      "Edit(**/id_rsa*)",
+      "Write(**/id_rsa*)",
+      "Edit(**/.aws/credentials)",
+      "Write(**/.aws/credentials)",
+      "Edit(**/appsettings.*.json)",
+      "Write(**/appsettings.*.json)"
     ]
   },
 
@@ -52,6 +72,10 @@
           {
             "type": "command",
             "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_registry.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"python\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_secrets.py\""
           }
         ]
       },

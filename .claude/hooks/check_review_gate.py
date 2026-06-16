@@ -2,9 +2,17 @@
 
 Fires when a task is marked complete by a verifier/reviewer role.
 Blocks completion (exit 2) unless:
-  (a) agent-workspace/REVIEW-LOG.md contains a fenced JSON block with
-      "verdict": "PASS" from the judge, AND
+  (a) a JUDGE-attributed verdict is PASS (C5), AND
   (b) the review iteration count is within the cap (≤2).
+
+Judge attribution (C5): the verdict must come from the judge, not any reviewer.
+We prefer agent-workspace/JUDGE-VERDICT.json
+    {"role":"judge","verdict":"PASS"|"FAIL","reviewersConsidered":[],
+     "blockingFindingsRemaining":[]}
+and gate on it. If absent, we scan REVIEW-LOG.md for a fenced JSON block that has
+BOTH a judge attribution ("role":"judge" or a truthy "judge") AND a verdict — and
+gate on THAT block, NOT last-block-wins. A non-judge PASS no longer satisfies the
+gate.
 
 If the iteration cap is exceeded, WRITES agent-workspace/ESCALATE_REQUIRED
 and exits 1 (allow the task to close so the pipeline can surface this to the
@@ -34,6 +42,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WORKSPACE = os.path.join(REPO_ROOT, "agent-workspace")
 REVIEW_LOG = os.path.join(WORKSPACE, "REVIEW-LOG.md")
+JUDGE_VERDICT_FILE = os.path.join(WORKSPACE, "JUDGE-VERDICT.json")
 ITERATION_FILE = os.path.join(WORKSPACE, "REVIEW-ITERATION.txt")
 ESCALATE_FILE = os.path.join(WORKSPACE, "ESCALATE_REQUIRED")
 MAX_ITERATIONS = 2
@@ -44,14 +53,43 @@ GATED_ROLES = {"team-verifier"}
 JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 
 
-def _read_verdict() -> str | None:
-    """Return 'PASS', 'FAIL', or None if not parseable.
+def _is_judge(obj: dict) -> bool:
+    """True if a JSON block is attributed to the judge."""
+    role = str(obj.get("role", "")).strip().lower()
+    if role == "judge":
+        return True
+    j = obj.get("judge")
+    if isinstance(j, bool):
+        return j
+    # a non-empty truthy "judge" attribution (e.g. a judge name string)
+    return bool(j)
 
-    REVIEW-LOG.md accumulates blocks from Reviewer A, Reviewer B, the
-    completeness critic, and the judge in that order.  The judge writes LAST.
-    We must read the LAST fenced JSON block that contains a 'verdict' field,
-    not the first (which would be Reviewer A's block, not the judge's).
+
+def _verdict_of(obj: dict) -> str | None:
+    v = str(obj.get("verdict", "")).upper()
+    return v if v in ("PASS", "FAIL") else None
+
+
+def _read_verdict() -> str | None:
+    """Return the JUDGE's 'PASS'/'FAIL', or None if no judge-attributed verdict (C5).
+
+    A non-judge PASS (Reviewer A/B/critic block) does NOT count — last-block-wins
+    is gone. Prefer agent-workspace/JUDGE-VERDICT.json; else scan REVIEW-LOG.md for
+    a fenced JSON block that is BOTH judge-attributed AND has a verdict.
     """
+    # 1) Dedicated judge verdict file.
+    if os.path.exists(JUDGE_VERDICT_FILE):
+        try:
+            with open(JUDGE_VERDICT_FILE, "r", encoding="utf-8", errors="replace") as fh:
+                obj = json.load(fh)
+            if isinstance(obj, dict) and _is_judge(obj):
+                v = _verdict_of(obj)
+                if v is not None:
+                    return v
+        except (json.JSONDecodeError, OSError):
+            pass  # fall through to REVIEW-LOG.md scan
+
+    # 2) REVIEW-LOG.md: gate on the judge-attributed block (last one if several).
     if not os.path.exists(REVIEW_LOG):
         return None
     try:
@@ -60,17 +98,18 @@ def _read_verdict() -> str | None:
     except OSError:
         return None
 
-    # Collect all verdict-bearing blocks, then take the last one.
-    verdicts = []
+    judge_verdict = None
     for match in JSON_BLOCK.finditer(text):
         try:
             obj = json.loads(match.group(1))
-            verdict = str(obj.get("verdict", "")).upper()
-            if verdict in ("PASS", "FAIL"):
-                verdicts.append(verdict)
         except json.JSONDecodeError:
             continue
-    return verdicts[-1] if verdicts else None
+        if not isinstance(obj, dict) or not _is_judge(obj):
+            continue
+        v = _verdict_of(obj)
+        if v is not None:
+            judge_verdict = v  # later judge block supersedes an earlier one
+    return judge_verdict
 
 
 def _read_iteration() -> int:
@@ -117,10 +156,12 @@ def main() -> int:
 
         if verdict is None:
             sys.stderr.write(
-                "REVIEW GATE BLOCK: agent-workspace/REVIEW-LOG.md is absent or "
-                "contains no fenced JSON block with a 'verdict' field. "
-                "The judge must write a verdict block before this task can close. "
-                'Expected format: ```json\\n{"verdict": "PASS"|"FAIL", ...}\\n```'
+                "REVIEW GATE BLOCK: no JUDGE-attributed verdict found. A reviewer "
+                "PASS does NOT satisfy this gate. Provide agent-workspace/"
+                'JUDGE-VERDICT.json {"role":"judge","verdict":"PASS"|"FAIL", '
+                '"reviewersConsidered":[],"blockingFindingsRemaining":[]} OR a fenced '
+                'json block in REVIEW-LOG.md with BOTH "role":"judge" AND a verdict, '
+                "before this task can close."
             )
             return 2
 
