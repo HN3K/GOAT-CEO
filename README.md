@@ -39,6 +39,13 @@ native Claude Code primitives.
 - **Is frugal by default.** Before spawning a pipeline, the Overseer reads the code and
   assesses whether the task needs a pipeline at all. Investigation/verification tasks and
   one-line fixes are resolved directly — no 8-agent pipeline for a typo.
+- **Fans implementers out into isolated worktrees.** Disjoint work runs as parallel
+  implementers in their own git worktrees, then reconverges through a speculative-batch merge —
+  see [Worktree fan-out](#worktree-fan-out-and-reconvergence).
+- **Grounds in your standards (optional).** When a repo opts into `rubric`, implementers are
+  grounded in its conventions + reusable components before writing, a deterministic standards gate
+  runs at integration, and a standards reviewer joins Phase 5 — see
+  [Standards grounding](#standards-grounding-rubric-optional).
 
 ---
 
@@ -111,12 +118,48 @@ work. They are wired in `.claude/settings.json`.
 | `PreToolUse` | `guard_registry.py` | Role-gates `repo-registry.json` writes — CEO and `team-overseer` allowed, other subagents blocked. |
 | `PreToolUse` | `check_stop_file.py` | If `agent-workspace/STOP` exists, halts the agent at its next tool boundary (faster than a turn boundary — the kill switch for a runaway agent). Matcher `Bash\|PowerShell\|Write\|Edit`. |
 | `PreToolUse` *(opt-in, user-scope)* | `guard_destructive_db.py` | Requires a single-use approval token before `DROP`/`RESTORE DATABASE`. Ships in `.claude/hooks/` but is **not** wired by default — wire it at user scope only for repos that need it. |
-| `SubagentStop` / `TeammateIdle` | `check_artifacts.py` | Blocks a subagent/Overseer from finishing until its declared deliverable exists. |
+| `SubagentStop` / `TeammateIdle` | `check_artifacts.py`, `check_partition.py` | Blocks a subagent/Overseer from finishing until its declared deliverable exists / the disjoint-partition manifest (`IMPLEMENTATION-MANIFEST.json`) is valid. |
+| `SubagentStop` | `check_toolcall_audit.py`, `check_span_validity.py` | Blocks a reviewer's verdict unless it read enough files **and** every cited `file:line` span actually resolves in the file (anti-hallucination — counting reads is not enough). |
 | `PostToolBatch` | `check_turn_budget.py` | Forces a yield if a subagent runs past a time budget. |
-| `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py`, `check_toolcall_audit.py` | Blocks task closure unless the suite passes **and actually ran tests** (a zero-test "hollow pass" is rejected) / judge verdict is PASS / reviewer actually read files. |
+| `TaskCompleted` | `check_test_gate.py`, `check_review_gate.py` | Blocks task closure unless the suite passes **and actually ran tests** (a zero-test "hollow pass" is rejected) and the judge verdict is PASS. |
+| `PostToolUse` *(opt-in, target-repo)* | `rubric_heal_gate.py` | Capped real-time `rubric check` self-heal for repos that enable it — heals ≤2 cycles/file then degrades, so it can't thrash an implementer. Not wired by default. |
 | `Stop` | `check_pipeline_complete.py` | Blocks the CEO's turn from ending while any expected `*.GATE` is missing or an escalation is pending; in opt-in unattended mode it also holds the turn so the run continues. |
 | `PreCompact` | `check_precompact.py` | Self-heals the resume anchor before compaction (never blocks). |
 | `SessionStart` | `inject_handoff_context.py` | Re-injects the resume anchor on startup/resume/compact. |
+
+---
+
+## Worktree fan-out and reconvergence
+
+Phase 3 is where the pipeline parallelizes. When the plan decomposes into independent work, each
+batch runs as its own `team-implementer` in an **isolated git worktree** (`isolation: worktree`) —
+separate working directories sharing one object store, so concurrent edits never collide.
+Implementers commit to their own `worktree-<name>` branch and hand it back; the CEO remains the
+only committer to main.
+
+**Fan-out is cheap; reconvergence is the hard part.** A naive "merge one branch, run the full suite,
+merge the next" is Amdahl-bound — the serial test runs dominate and adding implementers stops
+helping. So the CEO reconverges with a **speculative-batch** strategy:
+
+1. **Partition.** The architect emits a machine-readable `IMPLEMENTATION-MANIFEST.json` — per batch:
+   its file scope (disjoint across independent batches), a merge order, dependency edges
+   (`blockedBy`), one coordinator batch that owns shared/generated/lockfile resources, and a list of
+   frozen interfaces. A `SubagentStop` hook (`check_partition.py`) rejects a partition whose
+   independent batches overlap *before* any implementer runs.
+2. **Verify, then speculatively merge.** Each branch's diff is checked against its declared scope;
+   then all independent (disjoint) branches are merged onto a throwaway integration branch and the
+   broad suite runs **once**. Green → fast-forward main. Red → fall back to merging one at a time
+   until the suite reddens — the offending branch is the culprit (the merge position *is* the bisect
+   result), eject it and re-batch.
+3. **Stacked work lands bottom-up.** Dependent batches (non-empty `blockedBy`) merge after their
+   parents, restacking as needed.
+
+Merge stays **CEO-manual** by design (single-committer discipline) — the fan-out produces branches,
+the CEO lands them. The same logic runs either as prose the CEO follows or — when the Workflow tool
+is available — as a deterministic JavaScript pipeline (`pipeline-kernel.reference.js`) that fans
+agents out with `isolation:'worktree'` and returns the branch list for the CEO to land. A best-of-N
+variant (k attempts at one hard task, winner chosen by **executing tests**, never an LLM judge) is
+supported for the rare task that won't decompose. Design + cost models: `GOAT-CEO-REWORK-DESIGN.md §D`.
 
 ---
 
@@ -173,6 +216,51 @@ registered as **read-only reference** sources that agents may cite but never mod
 
 ---
 
+## Standards grounding (rubric, optional)
+
+GOAT-CEO can optionally integrate **rubric** — a separate Claude Code-native standards system —
+as a per-repo capability (`RUBRIC-AVAILABLE`), detected at intake exactly like the Codebase-Index
+and **never blocking a repo that doesn't use it.** Where the Codebase-Index answers *"where does
+this task live?"*, rubric answers *"does this code follow our conventions and reuse what already
+exists?"* — the standards / conventions / reuse axis the correctness-focused pipeline does not
+otherwise enforce. The two are complementary, not redundant.
+
+rubric is run as a **host tool** (installed once in the operator environment, pointed at any repo
+via `--repo`) through its **deterministic surface** — so the common path adds no nested LLM calls:
+
+- **Grounding (Phase 3).** Before an implementer writes, `rubric context "<task>"` injects the
+  repo's canonical exemplars, applicable conventions, and *existing reusable components*
+  (symbol-level, via `ast`) — so the model reuses what's there instead of reinventing it. This
+  complements the Codebase-Index's architectural map in the same grounding step.
+- **Gate (Phase 3 → 4).** A conditional `RUBRIC.GATE`: the CEO runs `rubric check` (deterministic,
+  exit-1 on violation) on the merged diff; a blocking standards violation is treated as a fact,
+  like a failing test. (Added to the expected-gates set only for waves that include a rubric repo.)
+- **Standards review (Phase 5).** A third reviewer — "Reviewer C" — runs rubric's own
+  adversarially-verified review (deterministic gate + grounded review + a mechanical span-check +
+  a 3-judge refutation ensemble) as a standards lens feeding the judge. It is **orthogonal** to the
+  correctness and test-quality reviewers, not a replacement: rubric verifies conventions/reuse;
+  it never verifies correctness, and the existing reviewers stay authoritative for that.
+- **Measurement (Phase 6).** `rubric measure` reports before/after adherence + anti-bloat deltas
+  (gate-pass rate, complexity, SLOC) in the session summary.
+- **Self-evolving KB (optional).** At session close, `rubric codify` proposes new/tightened
+  standards from recurring verified findings into `.rubric/proposals/` — for **human approval**,
+  never auto-merged.
+- **Real-time self-heal (advanced opt-in).** A capped PostToolUse gate (`rubric_heal_gate.py`) can
+  feed standards violations back to the implementer to fix mid-turn — heals ≤2 cycles per file then
+  degrades to advisory, so it can never thrash an implementer past its turn cap.
+
+rubric also lent GOAT-CEO one mechanism worth applying more broadly: its mechanical **span-check** —
+confirming a reviewer's cited `file:line` span actually exists in the file — is grafted onto the
+correctness reviewers (A/B) as a `SubagentStop` hook, catching fabricated citations that a read-count
+audit cannot. rubric's own `claude -p` LLM path is used only by Reviewer C and the optional codify
+step (opt-in for repos that enabled rubric); everything else is free and deterministic.
+
+Caveats: rubric gives full value on **Python** (lint + reuse index + metrics) and partial value on
+Node (gate + conventions, but no symbol-level reuse index yet); the seed KB is a template — a repo
+supplies its own conventions for real value. Full integration design: `GOAT-CEO-REWORK-DESIGN.md §I`.
+
+---
+
 ## Pros and cons
 
 **Strengths**
@@ -218,6 +306,10 @@ registered as **read-only reference** sources that agents may cite but never mod
 3. Hooks must be trusted on first run. For unattended use, encode hard safety as
    `permissions.deny` rules (these survive `--dangerously-skip-permissions`); never rely on
    chat instructions, which are lost on compaction.
+4. **Optional — standards grounding.** To enable per-repo standards/reuse enforcement, install
+   `rubric` in the operator environment (a host tool, run against any repo via `--repo`) and run
+   `rubric init --no-claude` in a target repo; GOAT-CEO then detects it as `RUBRIC-AVAILABLE` and
+   skips it everywhere else. See [Standards grounding](#standards-grounding-rubric-optional).
 
 ---
 
