@@ -76,10 +76,12 @@ so a stuck CEO surfaces instead of spinning. Don't rely on it; write a marker.
 
 ## 3. Perseverance through compaction (the never-stop doctrine — unattended only)
 
-**Low context is NOT a stop condition in unattended mode.** Auto-compaction in this harness is automatic, silent, and
-made lossless by a survival loop: `check_precompact.py` (PreCompact, never blocks) regenerates the machine-facts block
-of `RESUME-STATE.md` before the prune; `inject_handoff_context.py` (SessionStart, `async:false`) re-injects it after.
-You do not need to *do* anything for compaction to be safe — you only need to **not stop**.
+**Low context is NOT a stop condition in unattended mode.** Auto-compaction in this harness is automatic and silent,
+and made **durably resumable** by a survival loop: `check_precompact.py` (PreCompact, never blocks) regenerates the
+machine-facts block of `RESUME-STATE.md` before the prune; `inject_handoff_context.py` (SessionStart, `async:false`)
+re-injects it after. What survives is the machine-verifiable floor — git state + sentinels + the machine-refresh block;
+the running narrative is capped and can decay, which is why resume re-grounds from facts, not prose. You do not need to
+*do* anything for compaction to be safe — you only need to **not stop**.
 
 **DO** keep executing through a high token count (treat it as a non-event); stay lean structurally so compactions are
 rare and clean (delegate ALL verbose work to subagents — each has its own window; keep your own turns short; never
@@ -162,7 +164,7 @@ while ($true) {
 
 ---
 
-## 7. Handoff & memory size compliance (so the survival loop is actually lossless)
+## 7. Handoff & memory size compliance (so resume stays durable, not decayed)
 
 A handoff or memory that exceeds budget gets truncated at the injection boundary or skipped on auto-load — and an
 unread anchor is worse than none, because it looks like coverage while silently losing state. Every durable artifact

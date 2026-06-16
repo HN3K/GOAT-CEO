@@ -45,6 +45,20 @@ If the operator has not explicitly asked for an unattended run, you are in Colla
 
 ---
 
+## Effort tiers and the decision-visibility artifact (frugal-by-default)
+
+Before committing to the full pipeline, size the work to the **smallest of three effort tiers** that completes it safely (this is the frugality discipline — do not run an 8-agent pipeline for a typo):
+
+- **Direct** — investigation/verification only, or a trivial one-file edit with no API/schema/security touch and tests available. No pipeline; you (or one Overseer) resolve it directly.
+- **Standard** — a normal change in one repo: the per-repo pipeline (plan → implement → review → test).
+- **Full CEO** — worktree fan-out and/or multi-repo: the whole harness.
+
+Pick the smallest safe tier; escalate a tier up if the work proves riskier than it looked (security/permissions/schema surface, won't decompose, etc.).
+
+> **C19 — record any REDUCED path.** Whenever you choose a **Direct** tier (investigation-only, or a trivial direct fix that SKIPS the pipeline), you MUST emit a one-line `agent-workspace/ASSESSMENT.md` recording the chosen tier and *why* — e.g. *"Direct fix, no pipeline: low-risk, one file, no API/schema/security touch, tests available."* This turns "the system chose to do less" into an auditable decision instead of a silent skip. A worked example lives at `agent-workspace/ASSESSMENT.md` (it records its own tier and the reasoning) — follow that shape: selected tier, why-not-a-reduced/larger path, and escalation triggers. The Standard and Full-CEO tiers already leave a trace via the pipeline gates and artifacts; the Direct tier is the one that would otherwise be invisible, so it is the one that must write this artifact.
+
+---
+
 ## Step 1 — Session Initialization (INTERACTIVE)
 
 > **Steps 1 and 2 are interactive.** Output each question, then STOP. Do not proceed until the user responds.
@@ -403,7 +417,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
   - `isolation: worktree` (when parallel + uncertain file overlap)
   - Spawn prompt from `templates.md` Section 7 with explicit `{SCOPE_PATH}` constraint
   - Checkpoint-and-yield contract: "Do ONE bounded unit, report, then YIELD. Never marathon."
-- Implementers do NOT commit to main — they report branch name + file list (commit/push is denied by harness for implementers)
+- Implementers commit atomically to their own `worktree-<name>` branch and report branch name + file list; they never push and never commit to main. (Commit/push is **warn-enforced** by `guard_git_commit.py` — surfaced for review, not hard-denied — plus the single-committer-to-main convention; only the bare `git add -A`/`.` sweep is a hard permission deny.)
 - Non-conflicting batches run in parallel; shared-file batches serialized via `addBlockedBy`
 - Monitor via `claude agents` view (not in-band polling); watch for stall (agent "Working" anomalously long with no output = potential lock-in)
 - Hard stop: write `agent-workspace/STOP` to halt a locked agent at its next tool boundary (faster than a turn boundary)

@@ -318,7 +318,7 @@ discard losing worktrees with `git worktree remove --force`.
 
 ### Forced shutdown (operator STOP only)
 
-> Context pressure is NOT a forced-shutdown trigger. This path fires only on an operator `STOP` file or a genuine terminal escalation — never because the window is filling. For low context, see "Context-limit approach" below — compaction is lossless and is not a shutdown trigger.
+> Context pressure is NOT a forced-shutdown trigger. This path fires only on an operator `STOP` file or a genuine terminal escalation — never because the window is filling. For low context, see "Context-limit approach" below — compaction gives durable, machine-grounded resume and is not a shutdown trigger.
 
 1. CEO writes `agent-workspace/STOP` immediately (halts all agent tool calls at their next boundary).
 2. CEO writes `agent-workspace/MISSION.md` with CURRENT STATE block: phase reached, which sentinels exist, which agents were running (names + last STATUS.md entry), which tasks were open, what the next action should be.
@@ -328,7 +328,7 @@ discard losing worktrees with `git worktree remove --force`.
 
 ### Context-limit approach (mode-dependent)
 
-Auto-compaction in this harness is automatic, silent, and lossless — it is **not** a shutdown trigger in either mode.
+Auto-compaction in this harness is automatic and silent, and gives **durable, machine-grounded resume** (git state + sentinels + a compact machine-refresh block) — the machine-verifiable floor is preserved across the prune; running narrative is capped and can decay. It is **not** a shutdown trigger in either mode.
 
 **Collaborative (default):** when your window fills, keep working — stay lean (delegate verbose work to subagents, keep your turns short, never read large files yourself) and treat files + git (`RESUME-STATE.md`, `agent-workspace/`, `*.GATE`, `MISSION.md`) as your durable memory. After a compaction, resume: read the re-injected `RESUME-STATE.md`, verify its machine block against `git` + `*.GATE`, then continue the single `NEXT_ACTION` — do not re-plan or re-derive completed phases. You still yield to the operator at phase boundaries (that's the default).
 

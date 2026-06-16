@@ -41,11 +41,37 @@ external-research KB, and worktree fan-out) that are inert until you enable them
   and throughput (fan-out) — each disjoint, opt-in, and a no-op when absent. See
   [Knowledge planes](#the-four-knowledge-planes-optional).
 - **Two modes: collaborative by default, unattended on opt-in.** Unattended runs survive
-  Claude Code's auto-compaction losslessly via a self-healing resume anchor. See
+  Claude Code's auto-compaction with **durable, machine-grounded resume** (git state + sentinels
+  + a compact machine-refresh block) via a self-healing resume anchor — machine-verifiable state
+  is preserved across compaction; running narrative is capped and can decay. See
   [Operating modes](#operating-modes).
 - **Is frugal by default.** Before spawning a pipeline, the Overseer reads the code and assesses
   whether the task needs one at all — investigation/verification tasks and one-line fixes are
-  resolved directly. No 8-agent pipeline for a typo.
+  resolved directly. No 8-agent pipeline for a typo. The CEO picks the smallest of **three effort
+  tiers** that completes the task safely — see [Effort tiers](#effort-tiers-how-much-machinery).
+
+---
+
+## Effort tiers — how much machinery
+
+GOAT-CEO is frugal by default: it does **not** run the full pipeline for every task. The CEO sizes
+each request to the smallest of **three tiers** that completes it safely — there is no L0–L5 ladder,
+the real decision is roughly trinary:
+
+| Tier | When | What runs |
+|---|---|---|
+| **Direct** | Investigation/verification only, or a trivial one-file edit with no API/schema/security touch and tests available. | No pipeline. The CEO (or one Overseer) answers or makes the edit directly. |
+| **Standard** | A normal change in one repo. | The per-repo pipeline: plan → implement → review → test. |
+| **Full CEO** | Work that fans out into parallel worktrees and/or spans multiple repos. | Worktree fan-out, speculative-batch merge, cross-repo routing — the whole harness. |
+
+The CEO **picks the smallest tier that is safe** and escalates a tier up if the work turns out to be
+riskier than it looked (touches a security/permissions/schema surface, won't decompose cleanly, etc.).
+
+When the CEO chooses a **reduced** path (Direct — investigation-only or a trivial direct fix that
+skips the pipeline), that choice is **recorded**: it emits a one-line `agent-workspace/ASSESSMENT.md`
+naming the chosen tier and why. This makes "the system chose to do less" auditable rather than
+silent — see the C19 decision-visibility artifact documented in
+[`.claude/commands/goat-ceo.md`](.claude/commands/goat-ceo.md).
 
 ---
 
@@ -59,23 +85,29 @@ external-research KB, and worktree fan-out) that are inert until you enable them
 | **Overseer** | `team-overseer` | opus | 1 per repo | Runs one repo's 6-phase pipeline; spawns its own pipeline agents (native deep spawn); reports phase completions + cross-repo flags to the CEO. |
 | **Architect / Planner** | `team-architect` | opus | per phase | Writes `PLAN.md` + the partition manifest (Phase 1); revises after research (Phase 2). Also the framing for the review **judge** (opus, read-only). |
 | **Researcher** | `team-researcher` | opus | 2 parallel | Codebase + technical research; cite `file:line`; iterate until a 5-condition convergence gate passes. Has `WebSearch`/`WebFetch`. |
-| **Implementer** | `team-implementer` | sonnet | N batches | Execute batched edits in **isolated worktrees** (`maxTurns: 30`, cannot spawn sub-agents). Cannot commit — they report a branch + file list. |
+| **Implementer** | `team-implementer` | sonnet | N batches | Execute batched edits in **isolated worktrees** (`maxTurns: 30`, cannot spawn sub-agents). Commit *atomically to their own `worktree-<name>` branch*; never push and never commit to main — they hand the CEO a branch + file list to merge. (Commit/push discipline is warn-enforced + single-committer convention, not a hard permission deny — see [Hook enforcement](#the-hook-enforcement-layer).) |
 | **Verifier** | `team-verifier` | sonnet | 2+ | Independent dual review (correctness + test-quality); per-worktree diff checks. Read-only on production paths. Also the framing for the **completeness critic** (haiku). |
 | **CEO-Assistant** | `team-ceo-assistant` | opus | on demand | Read-only cross-repo impact scout (`permissionMode: plan` — hard read-only). CEO-only. |
 | **Cross-Repo Reviewer** | `team-cross-reviewer` | sonnet | per group | Verifies API/schema/config alignment across a related group after all members finish. CEO-only. |
 | **Roadmap Architect** | `team-roadmap-architect` | opus | per initiative | Maintains a single milestone roadmap; cannot spawn sub-agents. |
 
 **Single authority, flat integration.** Overseers spawn their own pipeline agents, but the CEO is
-the only agent that commits. Implementers are denied commit/push by permission rules and hand back
-worktree branches for the CEO to merge.
+the only agent that commits **to main**. Implementers commit atomically to their own
+`worktree-<name>` branch and hand those branches back for the CEO to merge — they never push and
+never commit to main. This is **not** a hard permission deny: raw `git commit`/`git push` are
+*warn-enforced* by the `guard_git_commit.py` hook (it surfaces the command for review, it does not
+block it), and single-committer-to-main is a convention the CEO upholds. The unconditional hard deny
+covers only the bare `git add -A`/`git add .` sweep. See
+[Hook enforcement](#the-hook-enforcement-layer) and
+[docs/enforcement-truth-table.md](docs/enforcement-truth-table.md).
 
 ### The pipeline (per repo)
 
 | Phase | What happens | Gate to advance |
 |:--:|---|---|
-| **0** | **Assessment.** Overseer reads code/tests, decides if a pipeline is warranted. Non-code tasks end here. | — |
+| **0** | **Assessment.** Overseer reads code/tests, decides if a pipeline is warranted. Non-code tasks end here. *(The Phase-0 plan gate and mandatory intake are **soft by design** — see note below.)* | — |
 | **1** | **Plan.** Architect writes `PLAN.md` (goal, acceptance criteria as fenced JSON, task breakdown). Native plan-approval gate. | `PLAN.GATE` |
-| **2** | **Research.** Two researchers annotate the plan; architect revises; loop exits on a 5-condition AND-gate, emitting `IMPLEMENTATION-MANIFEST.{md,json}` (the disjoint partition). | `RESEARCH.GATE` |
+| **2** | **Research.** Two researchers annotate the plan; architect revises; loop exits on a 5-condition AND-gate, emitting the partition in two forms: `IMPLEMENTATION-MANIFEST.md` (human-readable batch narrative) and `IMPLEMENTATION-MANIFEST.json` (the machine-checked disjoint partition the `check_partition.py` hook validates). | `RESEARCH.GATE` |
 | **3** | **Implement + integrate.** Implementers execute batches in parallel worktrees; the CEO does the speculative-batch merge and runs the suite. | `IMPLEMENT.GATE` (+ optional `RUBRIC.GATE`) |
 | **4** | **Index.** One pass on merged main updates/repairs the Codebase-Index. | `INDEX.GATE` (0 stale + 0 missing) |
 | **5** | **Review.** Two fresh-context reviewers (correctness + test-quality with a reward-hack audit), optionally a third standards reviewer → completeness critic → a bias-mitigated judge emits binding PASS/FAIL JSON. | `REVIEW.GATE` (judge PASS; capped at 2 fix iterations then escalates) |
@@ -86,6 +118,19 @@ the hooks only *validate* it** (a `PreToolUse` hook blocks a role from writing u
 gate exists; a `Stop` hook blocks the CEO's turn from ending while any expected gate is missing).
 The one hook that writes anything is `check_review_gate.py`, which writes `ESCALATE_REQUIRED` past
 the iteration cap.
+
+> **Soft by design: the Phase-0 plan gate and mandatory intake.** Two of the gates above are
+> **CEO behavioral conventions, not harness-enforced plan-mode locks** — and that is deliberate.
+> The **Phase-0 plan-approval gate** (the CEO drafts a coordination plan and waits for your
+> confirmation before launching the pipeline) and the **mandatory-intake rule** (always confirm the
+> repo set and run the index/prerequisite check first, even when the goal names repos) are enforced
+> by prompt discipline, not by a hook: `permissions.defaultMode: "plan"` is **not** set in
+> `.claude/settings.json`, so no hook can mechanically block the CEO from skipping them. They are
+> labeled SOFT in [`rules.md`](.claude/commands/goat-ceo/rules.md)'s enforcement map and in
+> [docs/enforcement-truth-table.md](docs/enforcement-truth-table.md). The *hard* gates are the
+> sentinel-file phase order, the test/review gates, the anti-hallucination checks, the
+> single-committer `git add -A/.` deny, and the STOP kill switch — see the truth table for the
+> precise hard/soft/advisory split.
 
 ---
 
@@ -306,7 +351,9 @@ GOAT-CEO is allowed to build on; anything not in it must be cleared before being
 - Anti-hallucination is mechanical, not advisory: reviewers must read files *and* every cited
   `file:line` span must actually resolve; "tests pass" is independently re-verified against a frozen
   baseline.
-- Opt-in unattended mode gives lossless resume across compaction and process death.
+- Opt-in unattended mode gives **durable, machine-grounded resume** across compaction and process
+  death (git state + sentinels + a compact machine-refresh block) — the machine-verifiable floor is
+  preserved; running prose is capped and can decay.
 - Four opt-in knowledge planes compound quality — and the research KB makes *future* sessions
   cheaper (verified findings are reused instead of re-researched).
 - All state is inspectable on disk (`agent-workspace/`, `*.GATE`, `RESUME-STATE.md`, the KBs) and in
@@ -356,6 +403,30 @@ pipeline runs unchanged)
   `tools/research-system/scripts/run_capture.py` + `run_research.py` with `--research-root research-kb`.
   See [`tools/research-system/VENDORED.md`](tools/research-system/VENDORED.md).
 - **Codebase-Index**: per-repo; bootstrapped from [`specs/`](specs/) if a target repo lacks it.
+
+### Compatibility
+
+**This is experimental, pre-release software.** There are no published releases or tags — you run it
+from a clone of `master`. The matrix below records what it has been exercised against, not a support
+guarantee.
+
+| Dimension | Status |
+|---|---|
+| Claude Code version | Tested against the agent-teams experimental builds current at time of writing; behavior tracks the installed version. Run `claude --version` and confirm the custom hook events fire (the CEO live-fire-tests this at session start). |
+| OS | **Windows-primary** (developed/run on Windows 11). The commit wrapper ships as `ceo-commit.sh` (Git Bash) and `.ps1` outer loops (`scripts/autonomous-loop.ps1`) for PowerShell. Hooks are OS-agnostic Python; macOS/Linux are expected to work but are less soaked. |
+| Python | **3.11+** (the vendored Research System requires ≥ 3.11; hooks themselves run on ≥ 3.8). Must be reachable as `python` on PATH or every fail-open hook silently no-ops. |
+| Agent-teams flag | **Required** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (already set in `.claude/settings.json`). |
+| Hooks confirmed | All hooks are fail-open and validated to exit 0 on empty/garbage input; the CEO runs a live-fire enforcement self-check at session start. Some gates are availability-gated on experimental events (`PostToolBatch`, `TaskCompleted`, etc.) — they degrade to advisory if the build doesn't emit them. |
+
+`/goat-doctor` validates setup (interpreter-on-PATH, `$CLAUDE_PROJECT_DIR` expansion, agent-teams
+events, hook liveness). The honest hard/soft/advisory split for every enforcement rule lives in
+[docs/enforcement-truth-table.md](docs/enforcement-truth-table.md); see also
+[CHANGELOG.md](CHANGELOG.md) for what changed in the current hardening pass.
+
+**Optional — strict / fail-closed mode.** An opt-in strict mode (`agent-workspace/STRICT_MODE`
+sentinel or `GOAT_CEO_STRICT=1`) turns the test gate's no-config degraded-allow into a hard stop and
+logs fail-open/degraded events to `agent-workspace/HOOK-FAILURES.jsonl`. Today it affects that one
+gate; the helper is shared so other degraded-allow paths can opt in later.
 
 ---
 

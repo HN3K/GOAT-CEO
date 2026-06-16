@@ -1,0 +1,92 @@
+# Enforcement Truth Table
+
+This is the honest, per-rule map of what GOAT-CEO actually enforces — the centerpiece of the
+hardening pass (C13/C18). It exists so nobody has to infer enforcement strength from marketing prose:
+each row states whether a rule is **Hard**, a **Gate**, or **Advisory**, what enforces it, whether it
+is **fail-open**, whether it is covered by an automated self-test, and the **known bypasses/limits**.
+
+Read this alongside the HARD/SOFT map in
+[`.claude/commands/goat-ceo/rules.md`](../.claude/commands/goat-ceo/rules.md) and the hook wiring in
+[`.claude/settings.json`](../.claude/settings.json). Where a claim elsewhere in the docs and this
+table disagree, **this table wins** — it is sourced directly from the hooks and settings.
+
+## How to read the columns
+
+- **Hard / Gate / Advisory**
+  - **Hard** = an unconditional `permissions.deny` rule; survives `--dangerously-skip-permissions`,
+    does not depend on a Python interpreter being present.
+  - **Gate** = a Python hook that can block a tool call / stop / turn-end (`exit 2`). Real
+    enforcement, but only while the interpreter resolves and the hook event fires (see fail-open).
+  - **Advisory** = a convention, briefing, or warn-only hook. No mechanical block — relies on CEO
+    discipline or surfaces a warning the operator/CEO can override.
+- **Fail-open?** — **Every Python hook in this repo is fail-open**: any internal exception exits 0
+  (allow). A hook bug therefore never blocks legitimate work — and equally, a *dead interpreter*
+  silently disables every Gate row at once (see the global caveat below). `permissions.deny` rules
+  are the only non-fail-open enforcement.
+- **Self-tested?** — whether the rule is covered by `selftest_all.py` (the hook self-test harness
+  added in this pass, C10). It **has shipped** (`.claude/hooks/selftest_all.py`) and is run via the
+  `/goat-doctor` command (manually — it is **not** wired into session start; the session-start check
+  is the separate live-fire STOP probe in `goat-ceo.md` Step 1.0a). Its check groups A–J cover the
+  fail-open contract for every hook plus the STOP, git-sweep, secret-write, test, artifact,
+  review/judge, span, partition, and phase gates; rows it does not exercise are marked "No".
+- **Known bypasses / limits** — the honest caveats. If a row has none, it still inherits the global
+  caveats below.
+
+## Global caveats (apply to every Gate row)
+
+1. **Dead/mis-named interpreter no-ops every hook.** All hooks invoke the literal string `python` on
+   PATH. On a box where the interpreter is `py`/`python3`-only or shadowed (e.g. the Windows Store
+   stub), **every Gate row silently degrades to advisory** (fail-open = allow). This is the single
+   biggest enforcement risk; the CEO runs a live-fire self-check at session start to catch it, and
+   `/goat-doctor` re-checks it.
+2. **`$CLAUDE_PROJECT_DIR` must expand** in hook commands, and the Claude Code build must emit the
+   experimental agent-teams events (`SubagentStart`, `SubagentStop`, `PostToolBatch`, `TaskCompleted`,
+   `TeammateIdle`, `TaskCreated`, `PermissionDenied`). If an event doesn't fire on the installed
+   build, the gates bound to it silently won't run. Known: `TaskCompleted` does not fire under
+   Workflow execution — only on the prose/TaskCreate path.
+3. **Fail-open is a deliberate choice.** It prevents a hook bug from bricking every worktree
+   mid-batch. The cost is that "can't evaluate" biases toward "allow". The opt-in strict mode (C20,
+   enabled via `agent-workspace/STRICT_MODE` or `GOAT_CEO_STRICT=1`) currently affects exactly **one**
+   documented degraded-allow path — the test gate's no-config branch, where the normal warn+allow
+   becomes a hard block (`check_test_gate.py` is the only hook that consults `strict_mode()`). It also
+   logs every fail-open/degraded event to `HOOK-FAILURES.jsonl`. STOP (`check_stop_file.py`) and
+   secret-write (`guard_secrets.py`) are **already unconditional blocks** and do **not** consult strict
+   mode. The `_strict.py` helper is shared so other degraded-allow paths can opt in later.
+
+## The table
+
+| Rule | Hard / Gate / Advisory | Enforced by | Fail-open? | Self-tested? | Known bypasses / limits |
+|---|---|---|---|---|---|
+| **STOP kill switch** — `agent-workspace/STOP` halts the next Bash/PowerShell/Write/Edit | **Gate** | `check_stop_file.py` (PreToolUse `Bash\|PowerShell\|Write\|Edit`) | Yes (exit 0 on crash) | Yes (selftest_all.py, group B); also the only rule live-fire-probed at session start | Project-scope only — covers this repo's STOP path. Teammate sessions rooted in **other** repos are covered only if user-scope wiring with absolute STOP paths is installed (C9 widens this from `repo-registry.json`). Allows the bare `rm/del STOP` that clears it. |
+| **Secret-file writes** — block writes to env/key/credential files | **Hard** (`permissions.deny`) + **Gate** (defense-in-depth) | `permissions.deny` for `**/.env*`, `**/.npmrc`, `**/.pypirc`, `**/secrets.json`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `**/.aws/credentials`, `**/appsettings.*.json`; plus `guard_secrets.py` (PreToolUse `Write\|Edit`) for broader path patterns | Deny: **No**. Hook layer: Yes | Yes (selftest_all.py, group D) — hook layer | The deny is glob-based; a path the globs don't anticipate (unusual secret filename) slips the deny and relies on the fail-open hook. Reading secrets is not blocked (only Write/Edit). |
+| **Broad git-add sweep** — no `git add -A` / `git add .` | **Hard** (`permissions.deny`) + **Gate** | `permissions.deny: Bash(git add -A*)`, `Bash(git add .)`, `Bash(git add ./)`; plus `guard_git_commit.py` add-regex | Deny: **No**. Hook: Yes | Yes (selftest_all.py, group C) | Deny is exact/prefix match (kept exact so scoped `git add .claude/foo` still works). Variants the *deny alone* misses — `git -C <path> add -A`, `git add -u`, `git add :/`, `git add *` — are now caught by the **hook** regex (C15); the `-C <path>` form is the dangerous one because it can stage in **other** repos. |
+| **Single-committer / commit-push** — only the CEO commits to main; subagents commit only to their worktree branch, never push | **Advisory** (warn-only) | `guard_git_commit.py` (PreToolUse `Bash`) warns on raw `git commit`/`git push`; single-committer-to-main is convention | Yes | Yes (selftest_all.py, group C) — asserts warn-allow, not block | **Warn-only, not a hard deny.** There is no `permissions.deny` for `git commit`. The hook surfaces the command for review and **allows** it. An implementer committing to its own `worktree-<name>` branch is expected and correct; the convention is "no push, no commit to main," upheld by the CEO, not mechanically blocked. |
+| **Phase gate** — a role can't Write/Edit/Bash until its required `*.GATE` sentinel exists | **Gate** | `check_phase_gate.py` (PreToolUse `Write\|Edit\|Bash`), reads `PHASE-GATES.json` keyed by `agent_type` | Yes | Yes (selftest_all.py, group J) | If `PHASE-GATES.json` is absent/empty the hook fails open (no gate map = allow). Anchored on `REPO_ROOT`, so it gates by sentinel presence, not by which repo HEAD moved. |
+| **Implementer artifact gate** — subagent can't stop without its declared deliverable | **Gate** | `check_artifacts.py` (SubagentStop / TeammateIdle), per `agent_type` | Yes | Yes (selftest_all.py, group F) | Historically checked only artifact *presence* + a `git log --oneline -1` that passes in any non-empty repo. C1 replaces that with a `startHead..HEAD` diff + structured `IMPLEMENTER-RESULT.<batchId>.json`; until that lands, presence-only checks can pass without new work. |
+| **Verifier verdict** — verifier produces a structured verdict before stopping | **Gate** | `check_artifacts.py` (verifier `agent_type` branch) | Yes | Yes (selftest_all.py, group F) | Verifier is read-only on production paths (frontmatter `disallowedTools: Write, Edit`) but retains Bash; the gate checks for the verdict artifact/message, not that the review was substantive. |
+| **Test gate** — task can't close on a failing suite; a zero-test "hollow pass" is rejected | **Gate** | `check_test_gate.py` (TaskCompleted) | Yes | Yes (selftest_all.py, group E — incl. strict-mode no-config block) | Fail-open on absent/empty test command and on timeout (today). Runs from `REPO_ROOT`, not the target worktree (C3 fixes the cwd + makes timeout BLOCK/ESCALATE and emits `TEST-GATE-DEGRADED` when unconfigured). Does **not** fire under Workflow execution (event caveat #2). |
+| **Review / judge gate** — task can't close without judge `verdict: PASS` | **Gate** | `check_review_gate.py` (TaskCompleted); writes `ESCALATE_REQUIRED` past 2 iterations | Yes (but it *writes* a sentinel — the one hook that does) | Yes (selftest_all.py, group G) | Today returns the **last** fenced JSON block carrying any `verdict` and never checks `role` — a non-judge PASS block can satisfy it. C5 binds it to a dedicated `JUDGE-VERDICT.json`. Same role-blindness historically in `check_artifacts.py`. Does not fire under Workflow (caveat #2). |
+| **Reviewer read-audit** — A/B reviewer must read files before a verdict | **Gate** | `check_toolcall_audit.py` (SubagentStop), reads the reviewer's own transcript; gates only A/B | Yes | No (not in selftest_all.py) | Counts `{Read, Grep, Bash, Glob}` by tool **name**, not tied to the changed-file set — 5 arbitrary `Glob` calls satisfy the floor. C6 ties the floor to declared scope / changed files. Judge/critic/Reviewer-C exempt by marker. |
+| **Citation span validity** — a cited `file:line` must actually resolve | **Gate** | `check_span_validity.py` (SubagentStop), A/B reviewers only | Yes | Yes (selftest_all.py, group H) | Today returns 0 (allow) if **no** spans are found — an empty-spans verdict dodges the check; the match is substring-anywhere, not line-windowed. C7 makes ≥1 span mandatory and validates within cited line ± a window. |
+| **Partition disjointness** — independent batches must be file-disjoint before the research gate | **Gate** | `check_partition.py` (SubagentStop on architect); CEO also runs it as a CLI | Yes; absent manifest = allow (single-batch) | Yes (selftest_all.py, group I) | Exact set-intersection on `files[]` only — no case-fold, no `./` normalization, no directory-containment or shared-resource/lockfile detection; coordinator mismatch is warning-only. C8 hardens all of these. |
+| **Registry guard** — `repo-registry.json` is CEO/Overseer-only | **Gate** (role-gated) | `guard_registry.py` (PreToolUse `Write\|Edit`): allows CEO (no `agent_type`) + `team-overseer`, blocks other subagents | Yes | No (not in selftest_all.py) | Role is inferred from the hook payload's `agent_type`; if a build doesn't populate it the no-`agent_type` path treats the writer as the CEO (allow). Replaced a former role-blind deny that wrongly locked the CEO out. |
+| **Destructive-DB token** — `DROP/RESTORE DATABASE` requires a single-use approval token | **Gate** (opt-in, user-scope only) | `guard_destructive_db.py` — **ships in `.claude/hooks/` but is NOT wired in this repo's `settings.json`** | Yes | Not in selftest_all.py (not part of generic core) | **Inert by default.** Project-specific; only enforces if an operator wires it at user scope for a DB repo. A generic GOAT-CEO session does not ship this guard — do not assume DB ops are gated. |
+| **Plan-mode / Phase-0 plan gate** — CEO presents the plan and waits for confirmation before launching | **Advisory** (SOFT BY DESIGN) | CEO behavioral convention in `goat-ceo.md` Step 0/1 | n/a (no hook) | No | **Deliberately not a harness lock.** `permissions.defaultMode: "plan"` is **not** set, so no hook can block the CEO from launching without confirmation. Honest, soft by design (C18). |
+| **Mandatory intake** — always confirm repos + run the index/prereq check first | **Advisory** (SOFT BY DESIGN) | MANDATORY-INTAKE RULE block in `goat-ceo.md` Step 1; `{INDEX_STATUS}` propagation | n/a (no hook) | No | Prompt discipline only. The Phase-4 `INDEX.GATE` is a downstream backstop for staleness, but intake itself is not hook-enforced (C18). |
+| **Turn-budget yield** — implementer/verifier yields past a ~30-min budget | **Gate** (availability-gated) | `check_turn_budget.py` (PostToolBatch) + `maxTurns` frontmatter caps | Yes | No (not in selftest_all.py) | Depends on `PostToolBatch`/`SubagentStart` existing on the build (caveat #2); fallback is the `maxTurns` frontmatter cap, which is a real harness cap independent of the hook. |
+| **Worktree isolation / per-agent caps** — parallel implementers in worktrees, `maxTurns`, no sub-spawn, read-only verifiers/scout | **Hard** (frontmatter, harness-applied) | `isolation: worktree`, `maxTurns`, `disallowedTools: Agent`/`Write,Edit`, `permissionMode: plan` in agent defs | n/a (not a hook) | No (harness-native, not a Python gate) | Enforced by Claude Code applying the frontmatter, not by a fail-open hook — so these do **not** depend on the interpreter. A verifier still has Bash and could in principle write via a shell command (the frontmatter blocks Write/Edit tools, not all shell writes). |
+| **Resume-anchor self-heal** — regenerate machine facts before compaction; re-inject after | **Advisory** (never blocks) | `check_precompact.py` (PreCompact, never blocks) + `inject_handoff_context.py` (SessionStart) | Yes (PreCompact intentionally never blocks — blocking auto-compaction would deadlock) | No | Not an enforcement gate — a survival mechanism. Preserves the **machine-verifiable floor** (git state + sentinels + machine-refresh block); injected prose is capped/truncated and can decay, which is why resume re-grounds from facts. |
+| **Task-naming convention** | **Advisory** (warn-only) | `check_task_naming.py` (TaskCreated) — warns, never blocks | Yes | No | Cosmetic; off-convention titles warn only. |
+| **Denial audit log** | **Advisory** (logging) | `log_denial.py` (PermissionDenied) — appends to an audit log | Yes | No | Observability, not enforcement. |
+| **`rubric` self-heal cap** — capped standards self-heal in a target repo | **Gate** (opt-in, target-repo) | `rubric_heal_gate.py` (PostToolUse `Edit\|Write`) — **ships but not wired by default** | Yes | No | Inert unless copied into a target repo and wired. Heals ≤2 cycles/file then degrades to advisory + logs `RUBRIC-DEGRADED.md`. |
+| **`RUBRIC.GATE`** — blocking rubric violation blocks integration (RUBRIC-AVAILABLE repos) | **Gate** (deterministic CLI, opt-in per repo) | CEO runs `rubric check --changed` (exit 1 on violation) at Phase-3 integration; writes the gate only on exit 0 | The CLI is deterministic; the CEO's choice to run it is convention | No | Only present when a repo is RUBRIC-AVAILABLE and the gate is added to `EXPECTED-GATES.txt` for that wave; otherwise absent (and must be, or the Stop hook blocks forever on a missing optional gate). |
+
+## Bottom line
+
+The genuinely **hard** (interpreter-independent) enforcement is small and precise: the
+`git add -A/.` deny, the secret-file denies, and the harness-applied agent frontmatter caps. Almost
+everything else is a **fail-open Python gate** — real and useful when the interpreter and events are
+present, advisory the moment they aren't. The Phase-0 plan gate and mandatory intake are **advisory
+by design**. Several gates listed here (artifact, review, test, span, partition, read-audit) had
+false-pass holes that the C1/C3/C5/C6/C7/C8 batches close; this table is written to match the
+**current** state and flags where a hardening item is still in flight.
