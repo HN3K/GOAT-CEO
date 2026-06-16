@@ -344,9 +344,12 @@ print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components 
 | **R-D: KB / reuse-catalog staleness surfaces phantom symbols.** | Grounding artifact built once at Phase 1 (read-only that run); re-run `rubric index` in the Phase-4 index-update step so the catalog refreshes with the markdown indexes. |
 | **R-E: version coupling (rubric v0.0.1 + harness hook semantics).** | Pin rubric; keep its hooks OUT of GOAT-CEO sessions (`init --no-claude`); depend only on the CLI surface. Both systems fail-open, so a contract break degrades to no-op. |
 
-### §I.6 — Open decisions before building v1
+### §I.6 — Decisions resolved (2026-06-15); v1 BUILT
 
-- Confirm the **host-tool install** model (vs per-repo) is acceptable operationally.
-- Confirm `RUBRIC.GATE` is **conditional** (only added to `EXPECTED-GATES.txt` for waves with a RUBRIC-AVAILABLE
-  repo) so the Stop hook never blocks on an absent optional gate.
-- Whether v1 ships the `measure` deltas or defers them with the rest of the reporting polish.
+- ✅ **Host-tool install** model confirmed — rubric is installed once in the operator env and run against any target repo via `--repo`.
+- ✅ `RUBRIC.GATE` is **conditional** — added to `EXPECTED-GATES.txt` only for waves with ≥1 RUBRIC-AVAILABLE repo, so the Stop hook never blocks on an absent optional gate.
+- ✅ `measure` deltas **ship in v1** (Phase 6 finalize report).
+
+**v1 landed (2026-06-15):** `rubric`/`rubricStatus` registry fields + Step 1.2 detection/bootstrap (`rubric init --no-claude`) + `{RUBRIC_STATUS}` grounding block in the implementer template (per-agent: runs `rubric context` before writing, reports `rubric check` violations) + a CEO-run conditional `RUBRIC.GATE` at Phase 3 integration + `rubric measure` baseline/delta in Phase 6 + doctrine rows in `rules.md`. v2 items (LLM review-lens via `team-verifier`, native self-heal gate, codify loop, cross-repo conventions) remain deferred.
+
+Note: in the CEO pipeline each implementer assembles its own grounding (runs `inject` + `rubric context` in its own context window — no shared file, so no competing-path concern). The single-`index-context.md`-artifact merge in §I.3 applies to the goat-team single-repo planner path; either way rubric's own context/SessionStart hooks stay disabled (`init --no-claude`).

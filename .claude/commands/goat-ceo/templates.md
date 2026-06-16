@@ -372,6 +372,24 @@ If INDEX-UNAVAILABLE:
   No index tooling is present. Use direct Read/Grep/Glob tool calls to understand context.
   Note INDEX-UNAVAILABLE in your IMPLEMENTER REPORT.
 
+## Rubric standards (REQUIRED when RUBRIC-AVAILABLE, skip when RUBRIC-UNAVAILABLE)
+
+Rubric status for this repo: {RUBRIC_STATUS}  (RUBRIC-AVAILABLE | RUBRIC-UNAVAILABLE)
+
+If RUBRIC-AVAILABLE (run these from your worktree cwd — `rubric` is on the operator PATH; `--repo` defaults to `.`):
+  BEFORE writing any code, run and read into context (this COMPLEMENTS the index inject above —
+  the index gives the architectural map; rubric gives exact reusable components + conventions + exemplars):
+    rubric context "{TASK_DESCRIPTION}" --kb .rubric/kb
+  Follow the listed conventions (MUST/should). REUSE the listed existing components — do NOT reinvent a
+  component the catalog already lists. Match the canonical exemplars' style.
+  AFTER your batch is complete, run the deterministic gate on your changed files:
+    rubric check <your-changed-files> --kb .rubric/kb
+  Exit 1 = a blocking standards violation — FIX it before reporting complete. Report any residual rubric
+  findings in your IMPLEMENTER REPORT. (No `--format json`; parse the plain-text PASS/FAIL output.)
+
+If RUBRIC-UNAVAILABLE:
+  No rubric system is present. Proceed without standards grounding; note RUBRIC-UNAVAILABLE in your report.
+
 CHECKPOINT-AND-YIELD CONTRACT (Doctrine §E):
 - Do ONE bounded unit. Report a structured result. Then YIELD — end your turn.
 - Never marathon across multiple units in a single turn.

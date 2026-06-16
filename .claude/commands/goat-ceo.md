@@ -132,7 +132,7 @@ After response, validate each path. For **read-write target** repos:
 - `.git/` exists
 - `CLAUDE.md` present
 - `.claude/` directory with agents and commands present
-- Detect: GOAT skill, codebase-index system, codebase-index-tools
+- Detect: GOAT skill, codebase-index system, codebase-index-tools, rubric (optional — `.rubric/` dir + the `rubric` CLI on the operator's PATH)
 
 For **read-only reference** repos: confirm path exists and is readable. No `.git/`, `CLAUDE.md`, or GOAT checks required.
 
@@ -148,6 +148,8 @@ Display validation summary. Write `repo-registry.json`:
       "goat": true,
       "index": true,
       "tooling": true,
+      "rubric": true,
+      "rubricStatus": "RUBRIC-AVAILABLE",
       "lastSession": "ISO timestamp",
       "groups": []
     },
@@ -158,6 +160,8 @@ Display validation summary. Write `repo-registry.json`:
       "goat": false,
       "index": false,
       "tooling": false,
+      "rubric": false,
+      "rubricStatus": "RUBRIC-UNAVAILABLE",
       "lastSession": "ISO timestamp",
       "groups": []
     }
@@ -182,10 +186,15 @@ For each **read-write target** repo (`access: "rw"`), detect:
 - `Codebase-Index/` directory exists at the repo root
 - `codebase-index-tools` is installed/present (Python: `python -m codebase_index_tools status --format json`; Node: `node codebase-index-tools/cli.js status --format json`)
 - GOAT skill present (`.claude/commands/goat-team/` directory with `goat.md`)
+- **rubric (optional standards system):** `.rubric/` directory exists at the repo root AND the `rubric` CLI responds — run `rubric kb --kb .rubric/kb --repo <path>`. rubric is a HOST tool: it need not be installed inside the target repo, only on the operator's PATH, invoked with `--repo <path>`.
 
-For each repo, record one of two states in `repo-registry.json`:
+For each repo, record one of two states in `repo-registry.json` under `"indexStatus"`:
 - **INDEX-AVAILABLE** — `Codebase-Index/` + tooling both present and responding. Downstream agents MUST use `search`/`inject`/`check` for context.
 - **INDEX-UNAVAILABLE** — system missing or non-responsive. Downstream agents fall back to direct file reads. Record this gap so researchers and implementers know to read directly.
+
+Independently, record the rubric status in `repo-registry.json` under `"rubricStatus"`:
+- **RUBRIC-AVAILABLE** — `.rubric/` KB + `rubric` CLI both respond. Implementers run `rubric context` for grounding before writing; the CEO runs the conditional `RUBRIC.GATE` (`rubric check`) at Phase-3 integration.
+- **RUBRIC-UNAVAILABLE** — no `.rubric/` KB or no CLI. Standards grounding/gate are skipped. rubric is OPTIONAL — its absence never blocks the pipeline.
 
 For any repo with missing components, present:
 
@@ -194,9 +203,15 @@ For any repo with missing components, present:
 > B) Manual setup (copy spec files from GOAT-CEO/specs/; Overseer runs setup as first task)
 > C) Skip this repo for this session (records INDEX-UNAVAILABLE; agents fall back to direct reads)"
 
+**If the repo has no `.rubric/` KB** and the operator wants standards grounding, additionally offer:
+
+> "[Repo] has no rubric standards system. Options:
+> A) Bootstrap — run `rubric init --no-claude --repo <path>` (scaffolds `.rubric/` + git pre-commit + the reuse index; does NOT install rubric's own Claude Code hooks/skill — GOAT-CEO drives rubric via its CLI). NOTE: the seed KB is TS-flavored; the repo should supply its own conventions/exemplars for real value.
+> B) Skip (records RUBRIC-UNAVAILABLE; no grounding/gate for this repo)"
+
 **STOP HERE** for each repo needing setup. Wait for user response.
 
-After all repos are resolved, record final INDEX-AVAILABLE / INDEX-UNAVAILABLE status for each repo in `repo-registry.json` under `"indexStatus"`. This status travels with the repo into every Overseer spawn prompt.
+After all repos are resolved, record the final INDEX-AVAILABLE / INDEX-UNAVAILABLE status under `"indexStatus"` AND the RUBRIC-AVAILABLE / RUBRIC-UNAVAILABLE status under `"rubricStatus"` for each repo in `repo-registry.json`. Both statuses travel with the repo into every Overseer spawn prompt (as `{INDEX_STATUS}` and `{RUBRIC_STATUS}`).
 
 ---
 
@@ -294,6 +309,7 @@ The native team substrate IS the pipeline state machine — it replaces hand-rol
   INDEX.GATE
   REVIEW.GATE
   ```
+  **Add `RUBRIC.GATE` as a sixth line ONLY for waves with ≥1 RUBRIC-AVAILABLE repo** (and only in those repos' gate sets). Omit it when no repo uses rubric — otherwise the `check_pipeline_complete.py` Stop hook blocks forever on an absent optional gate.
 - Write `agent-workspace/STATUS.md` with initial state: `phase: SETUP | timestamp: {ISO} | active: CEO`.
 - Write the initial `agent-workspace/RESUME-STATE.md` (machine-readable resume anchor — schema in anti-drift §8b): MISSION, `PHASE: SETUP`, `GATES_PRESENT: []`, `GATES_EXPECTED` (= the EXPECTED-GATES list), the per-repo `branch`/`head` from `git rev-parse`, an empty/initial `TASKS` snapshot, and `NEXT_ACTION`. From here it is regenerated at every checkpoint per the Step 4 hard rule.
 - **Do NOT spawn a Scribe.** Log Tier-2 cross-repo decisions directly to `logs/{prefix}/cross-repo.log` inline (the Scribe role is removed per the rework; routine spawn/shutdown timeline is native via `claude agents`).
@@ -363,6 +379,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 
 **Phase 3 — Implement:**
 - CEO reads `IMPLEMENTATION-MANIFEST.md` — assigns batches
+- **When RUBRIC-AVAILABLE:** before spawning implementers, CEO captures the pre-change standards baseline — `rubric measure <src> --save agent-workspace/RUBRIC-BASE.json --repo <path> --kb .rubric/kb` — so the Phase-6 delta is a true before/after. Implementers receive `{RUBRIC_STATUS}` in their spawn prompt (templates §8) and run `rubric context` for conventions + reuse grounding before writing.
 - Determine isolation need: if ≥2 implementers run in parallel and file sets are uncertain/overlapping, use `isolation: worktree` on each implementer subagent; otherwise `isolation: none` with disjoint-file assignment
 - For each batch, Overseer spawns `{prefix}-implementer-{N}` (`team-implementer`) with:
   - `maxTurns: 30`, `disallowedTools: Agent`
@@ -381,7 +398,8 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
   2. For each PASS branch, CEO merges in a fixed order, running the broad test suite between merges: `git merge worktree-{name}`, then test. Abort and escalate on break.
   3. On conflict: CEO cherry-picks individual commits or spawns a manual-merge subagent
   4. After all merges land on main, CEO writes `agent-workspace/IMPLEMENT.GATE` via `.claude/hooks/ceo-commit.sh` (pathspec wrapper — never `git add -A`/`.`)
-  5. CEO removes merged worktrees: `git worktree remove` (or let `cleanupPeriodDays: 7` sweep)
+  5. **RUBRIC.GATE (only when this repo is RUBRIC-AVAILABLE):** CEO runs the deterministic standards gate on the merged changes — `rubric check --changed --repo <path> --kb .rubric/kb` (NO `--verify`, NO LLM — free). Exit 0 → CEO writes `agent-workspace/RUBRIC.GATE`. Exit 1 (blocking violation) → do NOT write the gate; spawn a targeted implementer to fix it, re-merge, re-check. A rubric blocking violation is a deterministic FACT (like a failing test), not an advisory opinion. When RUBRIC-UNAVAILABLE, skip this step and do NOT add `RUBRIC.GATE` to `EXPECTED-GATES.txt`.
+  6. CEO removes merged worktrees: `git worktree remove` (or let `cleanupPeriodDays: 7` sweep)
 
 **Phase 4 — Index:**
 - Runs ONCE on merged main (never per-worktree — index race)
@@ -403,7 +421,8 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 
 **Phase 6 — Verify + Finalize (CEO-direct):**
 - CEO runs the BROAD test suite independently against a frozen baseline (Doctrine #2 — never trust an implementer's "tests pass"; mock-passing units failed on real runs 7+ times)
-- CEO confirms ALL gate sentinels present: `PLAN.GATE`, `RESEARCH.GATE`, `IMPLEMENT.GATE`, `INDEX.GATE`, `REVIEW.GATE`
+- **When RUBRIC-AVAILABLE:** CEO runs `rubric measure <src> --baseline agent-workspace/RUBRIC-BASE.json --repo <path> --kb .rubric/kb` and reports the gate-pass / complexity / SLOC deltas in the session summary. Reporting only — runs after the independent broad-suite run and never blocks completion. (If no baseline exists, `--save` it and note "baseline established, no delta this run".)
+- CEO confirms ALL gate sentinels present: `PLAN.GATE`, `RESEARCH.GATE`, `IMPLEMENT.GATE`, `INDEX.GATE`, `REVIEW.GATE` (and `RUBRIC.GATE` when the repo is RUBRIC-AVAILABLE — added to `EXPECTED-GATES.txt` only for such waves, so the Stop hook never blocks on an absent optional gate)
 - CEO confirms `ESCALATE_REQUIRED` absent
 - `Stop` hook `check_pipeline_complete.py` blocks the CEO's turn end if any `*.GATE` is missing or `ESCALATE_REQUIRED` is set
 - CEO makes the single atomic commit via `.claude/hooks/ceo-commit.sh` with explicit pathspec

@@ -127,6 +127,7 @@ agent-workspace/RESEARCH.GATE     — written by CEO after 5-condition AND-gate 
 agent-workspace/IMPLEMENT.GATE    — written by CEO after worktree merge + broad suite passes
 agent-workspace/INDEX.GATE        — written by CEO after codebase-index-tools check --all returns 0 stale
 agent-workspace/REVIEW.GATE       — written by CEO after judge JSON "verdict": "PASS" + dual reviewer PASS
+agent-workspace/RUBRIC.GATE       — (OPTIONAL, only for RUBRIC-AVAILABLE repos) written by CEO after `rubric check` exits 0 on the merged diff; added to EXPECTED-GATES only for such waves
 
 (No hook writes any *.GATE file. Hooks only VALIDATE — exit 0 to allow, exit 2 to block;
 check_review_gate.py additionally writes ESCALATE_REQUIRED. The CEO is the sole gate writer,
