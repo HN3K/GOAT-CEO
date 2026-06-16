@@ -1,0 +1,13 @@
+{
+  "id": "ex-named-export",
+  "title": "Named export",
+  "intent": "how we export",
+  "language": "ts",
+  "code": "export const UserService = createService();",
+  "tags": [
+    "imports",
+    "grep-ability"
+  ],
+  "convention_id": "named-exports",
+  "source": null
+}

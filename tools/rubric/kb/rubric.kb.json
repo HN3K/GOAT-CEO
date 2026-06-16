@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1.0",
+  "name": "rubric-starter",
+  "version": "0.1.0",
+  "rule_ids": [
+    "appropriate-error-type",
+    "no-default-export",
+    "require-colocated-test"
+  ],
+  "exemplar_ids": [
+    "ex-colocated-test",
+    "ex-error-handling",
+    "ex-named-export"
+  ],
+  "convention_ids": [
+    "colocated-tests",
+    "error-handling",
+    "named-exports"
+  ]
+}

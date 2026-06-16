@@ -23,11 +23,16 @@ context compaction.
 - `specs/` — self-contained specs for bootstrapping the Codebase-Index + tooling into a
   target repo.
 - `scripts/autonomous-loop.ps1` — optional outer loop for crash-resilient unattended runs.
+- `tools/rubric/` — **vendored** copy of the `rubric` standards tool (the optional
+  `RUBRIC-AVAILABLE` capability). Bundled so the integration works from a fresh clone; install
+  with `pip install -e "tools/rubric[gate,retrieval]"`. See `tools/rubric/VENDORED.md`.
 
 ## Conventions
 
 - Primary content is Markdown (skills, agent defs, specs) and Python hooks. No runtime
-  application code lives here.
+  application code lives here **except** the vendored `rubric` tool under `tools/rubric/`
+  (a first-party tool bundled so the integration works from a fresh clone — edit it
+  upstream and re-vendor, never directly here).
 - Source of truth is the code/files, not prose — verify against actual files.
 - Per-session artifacts are written to `agent-workspace/` and `logs/` (gitignored).
 - The CEO is the single committer and makes only pathspec-scoped commits
@@ -42,8 +47,9 @@ hook commands (otherwise replace it with an absolute path). Requires the agent-t
 feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). See `README.md` → Setup.
 
 **Optional — rubric standards grounding.** The per-repo `RUBRIC-AVAILABLE` capability
-(conventions/reuse grounding + standards gate + standards reviewer) requires the external
-`rubric` CLI — a **host tool** installed on the operator's PATH and run against any repo via
-`--repo`; it is **not vendored here**. A target repo also needs a `.rubric/` KB
-(`rubric init --no-claude`). GOAT-CEO detects rubric at intake and silently skips it for repos
-that don't have it. See `README.md` → Standards grounding and `GOAT-CEO-REWORK-DESIGN.md §I`.
+(conventions/reuse grounding + standards gate + standards reviewer) uses the `rubric` CLI,
+which is **vendored under `tools/rubric/`** — install it with `pip install -e
+"tools/rubric[gate,retrieval]"` (puts `rubric` on PATH; run against any repo via `--repo`). A
+target repo also needs a `.rubric/` KB (`rubric init --no-claude`). GOAT-CEO detects rubric at
+intake and silently skips it for repos that don't have it. See `README.md` → Standards grounding,
+`tools/rubric/VENDORED.md`, and `GOAT-CEO-REWORK-DESIGN.md §I`.

@@ -1,0 +1,16 @@
+{
+  "id": "require-colocated-test",
+  "name": "Colocated unit test",
+  "intent": "Each logic file has a sibling `*.test.ts`, so tests are discoverable and one-to-one with the code they cover.",
+  "kind": "deterministic",
+  "enforcement": "blocking",
+  "tool": "rubric",
+  "spec": "colocated-test",
+  "languages": [
+    "ts",
+    "tsx"
+  ],
+  "tags": [
+    "testability"
+  ]
+}

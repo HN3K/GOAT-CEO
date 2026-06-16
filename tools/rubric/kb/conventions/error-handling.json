@@ -1,0 +1,15 @@
+{
+  "id": "error-handling",
+  "name": "Deliberate error handling",
+  "intent": "Errors are typed, deliberate, and never silently swallowed.",
+  "rule_ids": [
+    "appropriate-error-type"
+  ],
+  "exemplar_ids": [
+    "ex-error-handling"
+  ],
+  "tags": [
+    "errors",
+    "semantics"
+  ]
+}

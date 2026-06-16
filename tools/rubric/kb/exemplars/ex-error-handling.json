@@ -1,0 +1,13 @@
+{
+  "id": "ex-error-handling",
+  "title": "Typed, non-swallowed error",
+  "intent": "how we handle errors",
+  "language": "ts",
+  "code": "try {\n  return await repo.load(id);\n} catch (e) {\n  throw new NotFoundError(`user ${id}`, { cause: e });\n}",
+  "tags": [
+    "errors",
+    "semantics"
+  ],
+  "convention_id": "error-handling",
+  "source": null
+}

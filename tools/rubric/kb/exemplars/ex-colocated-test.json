@@ -1,0 +1,12 @@
+{
+  "id": "ex-colocated-test",
+  "title": "Colocated test layout",
+  "intent": "how we place tests",
+  "language": "ts",
+  "code": "// user-service.ts  ->  user-service.test.ts (sibling)",
+  "tags": [
+    "testability"
+  ],
+  "convention_id": "colocated-tests",
+  "source": null
+}

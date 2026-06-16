@@ -1,0 +1,18 @@
+{
+  "id": "no-default-export",
+  "name": "No default exports",
+  "intent": "Named exports are greppable: `export const Foo` and `import { Foo }` are precisely searchable by agents and tools; default exports are not.",
+  "kind": "deterministic",
+  "enforcement": "blocking",
+  "tool": "ast-grep",
+  "spec": "export default $X",
+  "languages": [
+    "ts",
+    "tsx",
+    "js"
+  ],
+  "tags": [
+    "imports",
+    "grep-ability"
+  ]
+}

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rubric"
+version = "0.0.1"
+description = "Ground AI coding agents in your standards: portable conventions+exemplars KB, deterministic gates, grounded LLM review."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7",
+]
+
+# Phase-scoped optional deps (installed when their phase starts; see ROADMAP.md).
+[project.optional-dependencies]
+gate = ["ruff>=0.6"]              # Phase 2 (one real deterministic adapter; ast-grep is an external binary)
+retrieval = ["rank-bm25>=0.2.2"] # Phase 3
+llm = ["anthropic>=0.40"]        # Phase 4 (API fallback; default is the claude CLI / subscription)
+metrics = ["radon>=6"]           # Phase 6c (anti-bloat: cyclomatic complexity + SLOC)
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rubric"]
+
+[project.scripts]
+rubric = "rubric.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

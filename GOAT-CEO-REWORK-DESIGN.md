@@ -266,10 +266,12 @@ and can blow the implementer's `maxTurns` on self-heal thrash. The adopted shape
    `--verify` ensemble or its `claude -p` path in-pipeline (the seed KB has 0 LLM-rules, so this adds zero
    mandatory LLM cost). Any LLM standards-review (v2) runs via GOAT-CEO's own `team-verifier` reading the KB, not
    rubric's `claude -p` (avoids Claude-in-Claude nesting + invisible subscription billing).
-2. **rubric is a HOST tool, not a per-repo dependency.** Install once in the operator/CEO env
-   (`pipx install rubric[gate,retrieval]`); invoke `rubric <cmd> --repo <target> --kb <portable-kb>` against any
-   target repo. Resolves the Python-only problem — rubric is never added to a Node repo's toolchain; the
-   conventions/exemplars plane is language-agnostic.
+2. **rubric is a HOST tool, not a per-repo dependency — and is VENDORED at `tools/rubric/`.** Bundled in
+   this repo so a fresh clone is self-contained; install once with `pip install -e "tools/rubric[gate,retrieval]"`
+   (puts `rubric` on PATH), then invoke `rubric <cmd> --repo <target> --kb <portable-kb>` against any target repo.
+   Resolves the Python-only problem — rubric is never added to a Node repo's toolchain; the conventions/exemplars
+   plane is language-agnostic. (Vendored rather than a git submodule because the upstream rubric repo has no shared
+   remote; re-vendor via `git archive` per `tools/rubric/VENDORED.md`.)
 3. **Merge retrieval into the ONE existing grounding artifact.** The planes are genuinely disjoint: Codebase-Index
    = architectural map + task routing (the "where"); rubric = symbol signatures + conventions + exemplars (the
    "what to call / how"). The Planner appends `rubric context`'s three sections to the single

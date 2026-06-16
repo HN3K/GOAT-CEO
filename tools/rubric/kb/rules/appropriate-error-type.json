@@ -1,0 +1,18 @@
+{
+  "id": "appropriate-error-type",
+  "name": "Appropriate, non-swallowed errors",
+  "intent": "Errors use the project's taxonomy and are never silently swallowed; whether an error is handled APPROPRIATELY is a semantic judgment a linter cannot make.",
+  "kind": "llm",
+  "enforcement": "advisory",
+  "tool": null,
+  "spec": "Review error handling: are errors typed with the project's taxonomy, propagated or handled deliberately (never silently swallowed), and is the chosen handling appropriate for the call site? Cite the exact line.",
+  "languages": [
+    "ts",
+    "tsx",
+    "py"
+  ],
+  "tags": [
+    "errors",
+    "semantics"
+  ]
+}

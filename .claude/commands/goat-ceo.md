@@ -189,7 +189,7 @@ For each **read-write target** repo (`access: "rw"`), detect:
 - `Codebase-Index/` directory exists at the repo root
 - `codebase-index-tools` is installed/present (Python: `python -m codebase_index_tools status --format json`; Node: `node codebase-index-tools/cli.js status --format json`)
 - GOAT skill present (`.claude/commands/goat-team/` directory with `goat.md`)
-- **rubric (optional standards system):** `.rubric/` directory exists at the repo root AND the `rubric` CLI responds — run `rubric kb --kb .rubric/kb --repo <path>`. rubric is a HOST tool: it need not be installed inside the target repo, only on the operator's PATH, invoked with `--repo <path>`.
+- **rubric (optional standards system):** `.rubric/` directory exists at the repo root AND the `rubric` CLI responds — run `rubric kb --kb .rubric/kb --repo <path>`. rubric is a HOST tool: it need not be installed inside the target repo, only on the operator's PATH, invoked with `--repo <path>`. rubric is **vendored at `GOAT-CEO/tools/rubric/`** — if the CLI is not yet on PATH, install it from there with `pip install -e "tools/rubric[gate,retrieval]"` (see `tools/rubric/VENDORED.md`).
 
 For each repo, record one of two states in `repo-registry.json` under `"indexStatus"`:
 - **INDEX-AVAILABLE** — `Codebase-Index/` + tooling both present and responding. Downstream agents MUST use `search`/`inject`/`check` for context.

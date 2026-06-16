@@ -1,0 +1,4 @@
+# Normalize line endings: store + check out LF everywhere (no CRLF churn/warnings).
+* text=auto eol=lf
+*.png binary
+*.jpg binary

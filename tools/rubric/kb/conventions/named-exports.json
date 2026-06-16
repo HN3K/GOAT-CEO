@@ -1,0 +1,15 @@
+{
+  "id": "named-exports",
+  "name": "Named exports only",
+  "intent": "Every module uses named exports so the codebase is greppable and refactor-safe.",
+  "rule_ids": [
+    "no-default-export"
+  ],
+  "exemplar_ids": [
+    "ex-named-export"
+  ],
+  "tags": [
+    "imports",
+    "grep-ability"
+  ]
+}

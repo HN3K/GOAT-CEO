@@ -1,0 +1,14 @@
+{
+  "id": "colocated-tests",
+  "name": "Colocated tests",
+  "intent": "Unit tests live next to the code they cover, one-to-one.",
+  "rule_ids": [
+    "require-colocated-test"
+  ],
+  "exemplar_ids": [
+    "ex-colocated-test"
+  ],
+  "tags": [
+    "testability"
+  ]
+}

@@ -225,8 +225,9 @@ this task live?"*, rubric answers *"does this code follow our conventions and re
 exists?"* — the standards / conventions / reuse axis the correctness-focused pipeline does not
 otherwise enforce. The two are complementary, not redundant.
 
-rubric is run as a **host tool** (installed once in the operator environment, pointed at any repo
-via `--repo`) through its **deterministic surface** — so the common path adds no nested LLM calls:
+rubric is **vendored under `tools/rubric/`** (install with `pip install -e "tools/rubric[gate,retrieval]"`)
+and run as a **host tool** — pointed at any repo via `--repo` — through its **deterministic surface**,
+so the common path adds no nested LLM calls:
 
 - **Grounding (Phase 3).** Before an implementer writes, `rubric context "<task>"` injects the
   repo's canonical exemplars, applicable conventions, and *existing reusable components*
@@ -306,10 +307,11 @@ supplies its own conventions for real value. Full integration design: `GOAT-CEO-
 3. Hooks must be trusted on first run. For unattended use, encode hard safety as
    `permissions.deny` rules (these survive `--dangerously-skip-permissions`); never rely on
    chat instructions, which are lost on compaction.
-4. **Optional — standards grounding.** To enable per-repo standards/reuse enforcement, install
-   `rubric` in the operator environment (a host tool, run against any repo via `--repo`) and run
-   `rubric init --no-claude` in a target repo; GOAT-CEO then detects it as `RUBRIC-AVAILABLE` and
-   skips it everywhere else. See [Standards grounding](#standards-grounding-rubric-optional).
+4. **Optional — standards grounding.** rubric is **vendored** under `tools/rubric/`, so a fresh
+   clone has it. Install with `pip install -e "tools/rubric[gate,retrieval]"` (puts the `rubric` CLI
+   on PATH; it's a host tool, run against any repo via `--repo`), then `rubric init --no-claude` in a
+   target repo to enable it. GOAT-CEO detects it as `RUBRIC-AVAILABLE` and skips it everywhere else.
+   See [Standards grounding](#standards-grounding-rubric-optional) and `tools/rubric/VENDORED.md`.
 
 ---
 
@@ -337,6 +339,7 @@ supplies its own conventions for real value. Full integration design: `GOAT-CEO-
   hooks/                        # the enforcement layer (Python) + autonomous-loop notes
   settings.json                 # permission deny rules + hook wiring
 specs/                          # self-contained bootstrap specs (index system, tooling, GOAT)
+tools/rubric/                   # vendored rubric standards tool — `pip install -e "tools/rubric[...]"` to enable
 scripts/autonomous-loop.ps1     # optional Tier-2 outer loop (restart-on-crash)
 agent-workspace/                # per-session artifacts incl. RESUME-STATE.md (gitignored)
 logs/                           # per-session audit trail (gitignored)
