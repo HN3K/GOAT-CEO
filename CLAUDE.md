@@ -17,8 +17,8 @@ context compaction.
 - `.claude/agents/` — custom subagent definitions (overseer, architect, researcher,
   implementer, verifier, ceo-assistant, cross-reviewer, roadmap-architect).
 - `.claude/hooks/` — the fail-open enforcement layer (phase gates, single-committer
-  guard, STOP-file kill switch, destructive-DB token, compaction self-heal + resume
-  injection).
+  guard, STOP-file kill switch, partition + reviewer-citation validators, destructive-DB
+  token, compaction self-heal + resume injection, and the opt-in `rubric_heal_gate.py`).
 - `.claude/settings.json` — permission `deny` rules + hook wiring.
 - `specs/` — self-contained specs for bootstrapping the Codebase-Index + tooling into a
   target repo.
@@ -40,3 +40,10 @@ The hooks in `.claude/settings.json` invoke `python` on PATH and reference hook 
 for your OS if needed, and confirm your Claude Code version expands `$CLAUDE_PROJECT_DIR` in
 hook commands (otherwise replace it with an absolute path). Requires the agent-teams
 feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). See `README.md` → Setup.
+
+**Optional — rubric standards grounding.** The per-repo `RUBRIC-AVAILABLE` capability
+(conventions/reuse grounding + standards gate + standards reviewer) requires the external
+`rubric` CLI — a **host tool** installed on the operator's PATH and run against any repo via
+`--repo`; it is **not vendored here**. A target repo also needs a `.rubric/` KB
+(`rubric init --no-claude`). GOAT-CEO detects rubric at intake and silently skips it for repos
+that don't have it. See `README.md` → Standards grounding and `GOAT-CEO-REWORK-DESIGN.md §I`.
