@@ -6,12 +6,19 @@ halted deterministically instead of waiting for a turn to end. The orchestrator 
 with a bare `Remove-Item`/`rm`/`del ... STOP`, which this hook explicitly allows so the CEO
 can resume.
 
-Wire at PreToolUse with matcher "Bash|PowerShell|Write|Edit". For a multi-repo CEO session
-the STOP set is derived automatically: GOAT-CEO's own `agent-workspace/STOP` is always
-covered, and — if `repo-registry.json` is present at the GOAT-CEO root — every registered
-repo's `<repo-root>/agent-workspace/STOP` is added too, so the kill switch reaches teammate
-sessions rooted in other repositories without manual user-scope wiring. (You may still ALSO
-wire this at user scope for belt-and-suspenders.)
+Wire at PreToolUse with matcher "Bash|PowerShell|Write|Edit". The STOP path SET is derived
+automatically: GOAT-CEO's own `agent-workspace/STOP` is always covered, and — if
+`repo-registry.json` is present at the GOAT-CEO root — every registered repo's
+`<repo-root>/agent-workspace/STOP` is added too. So when this hook FIRES it honors a STOP
+dropped in ANY registered repo, not only GOAT-CEO's.
+
+Coverage still depends on the hook actually RUNNING in the agent's session — the derived path
+list does not by itself wire the hook into other repos. With the default `teammateMode:
+in-process` (see .claude/settings.json), teammates run inside THIS session and inherit
+GOAT-CEO's project-scope hooks, so the registry-derived set reaches them with no extra wiring.
+A genuinely SEPARATE Claude Code session rooted in another repo does NOT inherit these project
+hooks; cover it by wiring this hook at user scope (or in that repo's settings). There is no
+installer that does this automatically — it is manual.
 
 Contract: exit 0 = allow; exit 2 = BLOCK (stderr is shown to the agent).
 Design rule: FAIL OPEN — any internal error allows the call. Keep this dependency-free.

@@ -116,24 +116,36 @@ def _recorded_start_head(agent_type: str, session_id: str) -> str | None:
     return None
 
 
+def _norm_path(p: str) -> str:
+    """Normalize a path for equality comparison (case + separators + abs)."""
+    try:
+        return os.path.normcase(os.path.abspath(p))
+    except Exception:
+        return os.path.normcase((p or "").replace("\\", "/"))
+
+
 def _implementer_result_evidence(
-    start_head: str | None, session_id: str, cur_head: str | None
+    start_head: str | None, cur_head: str | None, cwd: str
 ) -> bool:
     """True if a CURRENT-RUN IMPLEMENTER-RESULT*.json proves work.
 
     Schema (written by the implementer / CEO):
-        {sessionId, batchId, branch, startHead, endHead, changedFiles[], testsRun[],
+        {sessionId, batchId, cwd, branch, startHead, endHead, changedFiles[], testsRun[],
          deviationsFromPlan[]}
     Evidence = non-empty file whose endHead differs from the baseline AND whose
     changedFiles is non-empty AND which is bound to THIS run.
 
-    CURRENT-RUN BINDING (anti-stale): a leftover result file from a prior batch/session
-    must NOT clear a later no-op implementer. A file counts only if EITHER:
-      - its `sessionId` matches the payload session_id, OR
-      - its `endHead` matches the CURRENT worktree HEAD (the change it claims is in
-        this tree right now).
-    A stale file has a different sessionId and an endHead from an old commit, so it
-    binds to neither and is ignored.
+    CURRENT-RUN BINDING (anti-stale, including earlier batches of the SAME session):
+    a leftover result file must NOT clear a later no-op implementer. A file counts only if:
+      - its `endHead` matches the CURRENT worktree HEAD (the change it claims is in this
+        tree right now), OR
+      - its `startHead` matches the baseline recorded for THIS run by record_agent_start.py.
+        That baseline advances on every SubagentStart, so a prior batch's result carries a
+        stale startHead and will NOT match.
+    `sessionId` is deliberately NOT used as a binder: the SubagentStop payload session can be
+    shared across an entire CEO session, so it cannot distinguish batches. As a final
+    cross-worktree guard, if the file names a `cwd` and we have a payload cwd, they must match
+    — rejecting a same-session result whose startHead collides but came from another worktree.
     """
     for path in sorted(_glob.glob(os.path.join(WORKSPACE, "IMPLEMENTER-RESULT*.json"))):
         try:
@@ -155,12 +167,15 @@ def _implementer_result_evidence(
         baseline = start_head or rec_start
         if baseline and end_head == baseline:
             continue
-        # Current-run binding — reject stale files from prior batches/sessions.
-        rec_sid = str(obj.get("sessionId", "") or "").strip()
-        bound = (session_id and rec_sid and rec_sid == session_id) or (
-            cur_head and end_head == cur_head
+        # Current-run binding — reject stale files (incl. earlier same-session batches).
+        bound = (cur_head and end_head == cur_head) or (
+            start_head and rec_start and rec_start == start_head
         )
         if not bound:
+            continue
+        # Cross-worktree guard: a named cwd must match the payload cwd when both are present.
+        rec_cwd = str(obj.get("cwd", "") or "").strip()
+        if rec_cwd and cwd and _norm_path(rec_cwd) != _norm_path(cwd):
             continue
         return True
     return False
@@ -188,9 +203,9 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
     start_head = _recorded_start_head(agent_type, session_id)
 
     if not cwd:
-        # No worktree to inspect — a current-run-bound result file may still prove work
-        # (sessionId binding does not need cwd/HEAD); otherwise fail open.
-        if _implementer_result_evidence(start_head, session_id, None):
+        # No worktree to inspect — a current-run-bound result file (startHead match) may
+        # still prove work; otherwise fail open.
+        if _implementer_result_evidence(start_head, None, ""):
             return True, ""
         sys.stderr.write(
             "WARNING (check_artifacts): no payload cwd for team-implementer; "
@@ -221,7 +236,7 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
         pass  # if status fails we fall through to the remaining checks
 
     # (c) structured result evidence — only if bound to THIS run (anti-stale).
-    if _implementer_result_evidence(start_head, session_id, cur_head):
+    if _implementer_result_evidence(start_head, cur_head, cwd):
         return True, ""
 
     if start_head is None:
@@ -246,11 +261,11 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
         False,
         "team-implementer produced NO provable work: worktree HEAD is unchanged "
         "from its start baseline ({}), the working tree is clean, and no CURRENT-RUN "
-        "IMPLEMENTER-RESULT*.json (one whose sessionId matches this run or whose "
-        "endHead matches the current HEAD) exists. Make your code changes (commit on "
-        "your worktree branch or write IMPLEMENTER-RESULT.<batchId>.json with "
-        "sessionId + endHead + changedFiles), then report to the CEO and END YOUR "
-        "TURN.".format((start_head or "")[:12]),
+        "IMPLEMENTER-RESULT*.json (one whose endHead matches the current HEAD or whose "
+        "startHead matches this run's baseline, with a matching cwd) exists. Make your "
+        "code changes (commit on your worktree branch or write "
+        "IMPLEMENTER-RESULT.<batchId>.json with startHead + endHead + cwd + changedFiles), "
+        "then report to the CEO and END YOUR TURN.".format((start_head or "")[:12]),
     )
 
 

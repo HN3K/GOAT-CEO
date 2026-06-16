@@ -332,6 +332,15 @@ def check_C_git_commit():
         ("git add *", "git add *"),
         ("git add -- .", "git add -- ."),
         ("git add .", "git add ."),
+        # ceo-commit.sh substring must NOT wave a chained sweep past the guard.
+        ("echo ceo-commit.sh && git add -A", "ceo-commit substring + chained sweep"),
+        ("ceo-commit.sh x; git add -A", "ceo-commit substring + ; sweep"),
+        # QUOTED sweep selectors (the shell strips the quotes; git sweeps anyway).
+        ('git add "."', 'quoted "."'),
+        ("git add './'", "quoted './'"),
+        ('git add ":/"', 'quoted ":/"'),
+        ('git add "-A"', 'quoted "-A"'),
+        ('git add -- "."', 'quoted -- "."'),
     ]
     for cmd, label in block:
         assert_exit("C.block " + label, "guard_git_commit.py",
@@ -340,6 +349,10 @@ def check_C_git_commit():
         ("git add path/to/file.py", "git add path/to/file.py"),
         ("git add .claude/settings.json", "git add .claude/settings.json"),
         ("git add ./src/foo.py", "git add ./src/foo.py"),
+        ("git add .gitignore", "git add .gitignore (dotfile, not sweep)"),
+        ('git add "my file.py"', 'quoted normal path'),
+        ('bash .claude/hooks/ceo-commit.sh "m" .claude/settings.json',
+         "clean ceo-commit.sh invocation"),
         ("git commit -m x", "raw git commit (warn-only)"),
         ("git push", "raw git push (warn-only)"),
     ]
@@ -457,6 +470,23 @@ def check_F_artifacts():
                 assert_exit("F.impl current-run result allows", "check_artifacts.py",
                             {"agent_type": "team-implementer", "cwd": tmp3,
                              "session_id": sid3, "agent_transcript_path": ""}, 0)
+    # (9) same-session stale: the result's sessionId MATCHES the run, but its startHead is
+    #     stale and endHead != current HEAD -> still BLOCK. sessionId is no longer a binder,
+    #     so an earlier batch of the same long-running session can't clear a no-op.
+    tmp4, head4 = make_temp_git_repo()
+    _TMP_DIRS.append(tmp4)
+    sid4 = "selftest-impl-sid-4"
+    same_session_stale = {
+        "sessionId": sid4, "batchId": "earlier-batch",
+        "startHead": "0" * 40, "endHead": "b" * 40,  # stale startHead; endHead != HEAD
+        "changedFiles": ["src/earlier.py"],
+    }
+    with workspace_file("AGENT-START-TIMES.json", {sid4 + "_startHead": head4}):
+        with workspace_absent("IMPLEMENTATION-MANIFEST.json"):
+            with workspace_file("IMPLEMENTER-RESULT.samesession.json", same_session_stale):
+                assert_exit("F.impl same-session stale result blocks", "check_artifacts.py",
+                            {"agent_type": "team-implementer", "cwd": tmp4,
+                             "session_id": sid4, "agent_transcript_path": ""}, 2)
 
 
 def check_G_review_gate():
@@ -542,6 +572,16 @@ def check_H_span_validity():
     assert_exit("H.reviewer A missing-line span blocks", "check_span_validity.py",
                 {"agent_type": "team-verifier", "cwd": tmp,
                  "agent_transcript_path": tx_noline}, 2)
+
+    # (5) valid span in QUOTE-before-FILE order -> ALLOW. Field-order-agnostic extraction;
+    #     previously a file-before-quote regex missed this and false-blocked as "zero spans".
+    qf_span = ('{"reviewer":"A","verdict":"PASS","cited_spans":['
+               '{"quote":"return x * 42 + special_constant","line":11,'
+               '"file":"module.py"}]}')
+    tx_qf = temp_jsonl([assistant_msg("Quote-first span " + qf_span)])
+    assert_exit("H.reviewer A quote-first span allows", "check_span_validity.py",
+                {"agent_type": "team-verifier", "cwd": tmp,
+                 "agent_transcript_path": tx_qf}, 0)
 
 
 def check_I_partition():

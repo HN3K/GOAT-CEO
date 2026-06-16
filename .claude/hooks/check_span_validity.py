@@ -34,10 +34,11 @@ MIN_QUOTE = 12  # non-whitespace chars; below this a quote is too trivial to adj
 LINE_WINDOW = 3  # the cited quote must appear within cited_line ± this many lines
 
 # A cited-span object: {"file": "...", "line": <n|null>, "quote": "..."} in any field order.
-_SPAN_RE = re.compile(
-    r'\{(?P<body>[^{}]*?"file"\s*:\s*"(?P<file>(?:[^"\\]|\\.)*)"[^{}]*?'
-    r'"quote"\s*:\s*"(?P<quote>(?:[^"\\]|\\.)*)"[^{}]*?)\}'
-)
+# We match any FLAT object (no nested braces) and then pull each field out independently, so
+# the field ORDER does not matter — a `"quote"` that precedes `"file"` is still recognized.
+_SPAN_OBJ_RE = re.compile(r"\{[^{}]*\}")
+_FILE_FIELD = re.compile(r'"file"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_QUOTE_FIELD = re.compile(r'"quote"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _LINE_RE = re.compile(r'"line"\s*:\s*(\d+|null)')
 
 
@@ -86,11 +87,19 @@ def _assistant_text(transcript_text):
 
 
 def _extract_spans(text):
+    """Pull {file, quote, line} from every flat object carrying BOTH a "file" and a "quote"
+    field, in ANY order. Parsing each field independently (not one file-before-quote regex)
+    prevents a false "zero spans" block when a reviewer emits valid spans with quote first."""
     spans = []
-    for m in _SPAN_RE.finditer(text):
-        file_ = _unescape(m.group("file"))
-        quote = _unescape(m.group("quote"))
-        lm = _LINE_RE.search(m.group("body"))
+    for m in _SPAN_OBJ_RE.finditer(text):
+        body = m.group(0)
+        fm = _FILE_FIELD.search(body)
+        qm = _QUOTE_FIELD.search(body)
+        if not fm or not qm:
+            continue
+        file_ = _unescape(fm.group(1))
+        quote = _unescape(qm.group(1))
+        lm = _LINE_RE.search(body)
         line = lm.group(1) if lm else None
         spans.append({"file": file_, "quote": quote, "line": line})
     return spans

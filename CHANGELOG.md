@@ -67,8 +67,12 @@ hard/gate/advisory map.
   detection, expanded manifest schema, and hard-blocking coordinator/shared-resource conflicts (C8).
 - **Test gate** runs from the target repo/worktree `cwd` (not the GOAT-CEO root) and treats a timeout
   as BLOCK/ESCALATE rather than allow (C3).
-- **STOP kill switch** coverage derived from `repo-registry.json` so it reaches teammate sessions in
-  other repos, with an installer that live-fire-validates the user-scope wiring (C9).
+- **STOP kill switch** path set derived from `repo-registry.json`, so when the hook fires it honors a
+  STOP dropped in any registered repo — not just GOAT-CEO's. With the default `teammateMode:
+  in-process`, in-session teammates inherit GOAT-CEO's project hooks and are covered with no extra
+  wiring; a genuinely separate session rooted in another repo still needs the hook wired at user scope
+  (or in that repo) — the derived path list does not by itself wire the hook, and there is no
+  auto-installer for it (C9).
 
 ### Fixed
 

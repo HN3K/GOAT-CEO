@@ -5,8 +5,10 @@ description: Validate that the GOAT-CEO harness is actually enforcing — interp
 # /goat-doctor — does the enforcement layer actually work?
 
 GOAT-CEO's hooks are **fail-open**: if `python` isn't on PATH, or `$CLAUDE_PROJECT_DIR`
-isn't expanded, or a hook crashes, the gate silently becomes a no-op and every HARD rule
-degrades to advisory. `/goat-doctor` proves — rather than assumes — that enforcement is live.
+isn't expanded, or a hook crashes, the gate silently becomes a no-op and every **Gate row**
+degrades to advisory. (The **Hard** `permissions.deny` rules survive — Claude Code enforces
+them itself, independent of the interpreter.) `/goat-doctor` proves — rather than assumes —
+that the Gate enforcement is live.
 
 Run it after install, after a Claude Code upgrade, or any time you want to trust the gates.
 
@@ -47,7 +49,8 @@ It exits non-zero if ANY gate misbehaves, and prints a PASS/FAIL line per check.
 
 ## Interpreting results
 
-- **All PASS** → the harness is enforcing. HARD rules are mechanical.
+- **All PASS** → the harness is enforcing. Gate rows are live; the **Hard** `permissions.deny`
+  rules are mechanical regardless of the interpreter.
 - **Any FAIL on the fail-open contract** → a hook has a bug; it could block real work. Fix
   before relying on the system.
 - **Any FAIL on gate behavior** → that specific guarantee is NOT being enforced as claimed;

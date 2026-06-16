@@ -43,17 +43,22 @@ _GIT_GLOBAL_OPT = (
 )
 # A "sweep" pathspec/flag for `add` that stages broadly (the thing we forbid):
 #   -A / --all / -u / --update / . / ./ / :/ / : / *  / `-- .`
-# End-of-token: whitespace, end-of-string, OR a shell metacharacter that chains/terminates
-# the command (`git add .;rm -rf /`, `git add .&&x`, `git add .|cat`, `git add .)`). Without
-# the metachars these chained one-liners silently bypassed the sweep block. (F3)
-_EOT = r"(?:\s|$|[;&|)<>])"
+# End-of-token: whitespace, end-of-string, a shell metacharacter that chains/terminates
+# the command (`git add .;rm -rf /`, `git add .&&x`, `git add .|cat`, `git add .)`), OR a
+# CLOSING QUOTE. Without the metachars these chained one-liners silently bypassed the sweep
+# block (F3); without the quote-awareness, `git add "."` / `git add ':/'` / `git add "-A"`
+# slipped through because the selector was wrapped in quotes the shell strips before git
+# sees it (the quotes are cosmetic to git — `git add "."` stages everything just like
+# `git add .`).
+_EOT = r"(?:\s|$|[;&|)<>\"'])"
+# Optional surrounding quote: the shell removes it, so a quoted selector sweeps identically.
+_Q = r"[\"']?"
+# The sweep selectors/flags themselves (no leading quote, no trailing EOT — wrappers add those).
+_SWEEP_CORE = r"(?:-A|--all|-u|--update|\*|\.\/?|:\/?)"
 _ADD_SWEEP = (
     r"(?:"
-    r"-A\b|--all\b|-u\b|--update\b"            # whole-tree update flags
-    r"|\*" + _EOT +                             # glob-all
-    r"|\.\/?" + _EOT +                          # . or ./
-    r"|:\/?" + _EOT +                           # :/ (repo root magic) or bare :
-    r"|--\s+\.\/?" + _EOT +                     # bare -- then . or ./
+    + _Q + _SWEEP_CORE + _EOT +                # bare or quoted: -A  "."  './'  ":/"  "-A" ...
+    r"|--\s+" + _Q + r"(?:\.\/?|:\/?|\*)" + _EOT +  # bare `--` (end-of-opts) then . / ./ / :/ / *
     r")"
 )
 # `git` + zero-or-more global options + `add` + (any tokens) + a sweep selector.
@@ -63,6 +68,11 @@ _GIT_ADD_SWEEP = re.compile(
     r"\bgit\s+(?:" + _GIT_GLOBAL_OPT + r"\s+)*add\s+(?:\S+\s+)*?" + _ADD_SWEEP
 )
 
+# Shell chaining / command-substitution metacharacters. A command carrying any of these is
+# NOT a clean single wrapper invocation, so the ceo-commit.sh allow must not apply to it
+# (else `echo ceo-commit.sh && git add -A` would smuggle a sweep past the guard).
+_HAS_CHAIN = re.compile(r"[;&|\n`]|\$\(")
+
 
 def main() -> int:
     try:
@@ -70,12 +80,10 @@ def main() -> int:
         data = json.loads(raw) if raw.strip() else {}
         cmd = data.get("tool_input", {}).get("command", "")
 
-        # Explicit allow: ceo-commit.sh path (before any block checks)
-        if "ceo-commit.sh" in cmd:
-            return 0
-
-        # BLOCK: any sweep-style `git add` (incl. `git -C <path> add -A`, `git add :/`,
-        # `git add -u`, `git add *`, `git add .` / `./`, `git add -- .`).
+        # BLOCK FIRST: any sweep-style `git add` (incl. `git -C <path> add -A`, `git add :/`,
+        # `git add -u`, `git add *`, `git add .` / `./`, `git add -- .`, and their QUOTED
+        # forms). This runs BEFORE the ceo-commit.sh allow so a chained command such as
+        # `echo ceo-commit.sh && git add -A` cannot use the wrapper's name as a bypass token.
         if _GIT_ADD_SWEEP.search(cmd):
             print(
                 json.dumps(
@@ -91,6 +99,13 @@ def main() -> int:
                 )
             )
             return 2
+
+        # Explicit allow for the approved pathspec-only wrapper — ONLY when the command is a
+        # CLEAN single invocation with no shell chaining/substitution. The bare substring is
+        # not sufficient (that was the bypass): a chained command keeps going to the warn
+        # checks instead of being waved through here.
+        if "ceo-commit.sh" in cmd and not _HAS_CHAIN.search(cmd):
+            return 0
 
         # WARN-NOT-BLOCK: raw git commit (not via ceo-commit.sh)
         if re.search(r"\bgit\s+commit\b", cmd):
