@@ -320,28 +320,49 @@ If INDEX-UNAVAILABLE:
   No index tooling is present. Use direct Read/Grep/Glob tool calls to build context.
   Note INDEX-UNAVAILABLE in your RESEARCH-LOG.md findings header.
 
-## External research KB (REQUIRED check when RESEARCH-KB-AVAILABLE)
+## External research KB — CAPTURE ALWAYS, VERIFY ON DEMAND (when RESEARCH-KB-AVAILABLE)
 
 Research-KB status: {RESEARCH_KB_STATUS}  (RESEARCH-KB-AVAILABLE | RESEARCH-KB-UNAVAILABLE)
 Shared KB root: {RESEARCH_KB_ROOT}   (e.g. <GOAT-CEO>/research-kb)
 
-If RESEARCH-KB-AVAILABLE — for EXTERNAL research (prior art, library semantics, approach trade-offs):
-  1. CHECK FIRST (reuse before researching — THIS IS THE POINT): read {RESEARCH_KB_ROOT}/INDEX.md and grep for
-     your subject. If a stored subject corpus covers your questions, CITE its synthesis.md + claims.jsonl in
-     RESEARCH-LOG.md instead of running fresh online research. A reused, already-verified finding is NOT a
-     SINGLE-SOURCE flag — it carries its own claim→quote→stored-source provenance. (Saves time + tokens; the KB
-     compounds across sessions, so online runs get rarer.)
-  2. If the KB does NOT cover it AND the subject is worth persisting (durable, reusable, auditable), run the
-     Research System (from GOAT-CEO/tools/research-system/, with PYTHONPATH=src) to capture + verify + store:
-       python scripts/run_capture.py  <sources.json> --research-root {RESEARCH_KB_ROOT} --question "<q>"
-       python scripts/run_research.py <subject-slug> "<question>"  --research-root {RESEARCH_KB_ROOT}
-     It captures sources IN FULL, ties each claim to an exact quoted span, cross-model verifies, abstains on weak
-     support. Then update the subject row in INDEX.md and cite ONLY verdict==supported claims ({slug, source_id,
-     quote, verdict}) in RESEARCH-LOG.md. COST: heavy model use (~$1–3/question) — only for subjects worth
-     keeping. (If a coding-standard you verify here is worth enforcing, flag it for rubric's codify flow — see
-     GOAT-CEO-REWORK-DESIGN.md §J.1.)
-  3. For a quick throwaway lookup (not worth persisting): use WebSearch/WebFetch or the deep-research skill — do
-     NOT spin up the capture pipeline.
+If RESEARCH-KB-AVAILABLE — for ANY EXTERNAL research (prior art, library semantics, approach trade-offs), the
+policy is **capture everything you read (free), verify on demand**. Run scripts from
+GOAT-CEO/tools/research-system/ with PYTHONPATH=src. Pick a stable `<subject-slug>` per topic so sources accrue
+under it across sessions.
+
+  1. REUSE FIRST — read {RESEARCH_KB_ROOT}/INDEX.md and grep your subject:
+     - A **VERIFIED** subject (has `synthesis.md`) covering your questions → CITE its `synthesis.md`/`claims.jsonl`
+       in RESEARCH-LOG.md; do NOT re-research. Pre-verified → NOT a SINGLE-SOURCE flag.
+     - A **CAPTURED-but-unverified** subject covering it, and you need verified claims → run step 3 over the
+       already-stored sources (no re-fetch).
+
+  2. CAPTURE ALWAYS (FREE — no LLM): for EVERY external source you consult (the WebSearch/WebFetch URLs you
+     actually read), record them into a `sources.json` and capture them so nothing you read is lost:
+       python scripts/run_capture.py <sources.json> --research-root {RESEARCH_KB_ROOT} --question "<subject question>"
+     This fetches + stores the FULL source text + provenance (content_hash, capture_status) under `<slug>/sources/`,
+     and dedups by hash. Mark the subject **CAPTURED** in INDEX.md. Do this on EVERY external-research turn — the
+     KB's comprehensiveness comes from capturing all sources cheaply, not from verifying everything.
+
+  3. VERIFY ON DEMAND (LLM-cost ~$1–3/subject): run the full claim-level verify + synthesis ONLY when this
+     subject warrants a verified, auditable answer now (durable / reusable / standards-relevant), OR when a query
+     needs verified claims from already-captured sources:
+       python scripts/run_research.py <subject-slug> "<question>" --research-root {RESEARCH_KB_ROOT}
+     It runs over the already-captured sources (NO re-fetch), ties each claim to an exact quoted span, cross-model
+     verifies, abstains on weak support. Cite ONLY verdict==supported claims ({slug, source_id, quote, verdict});
+     mark the subject **VERIFIED** in INDEX.md. (A verified coding-standard worth enforcing → flag for rubric's
+     codify flow, GOAT-CEO-REWORK-DESIGN.md §J.1.) For a genuinely trivial throwaway lookup you will not persist,
+     plain WebSearch/WebFetch is fine — but default to capturing (step 2 is free).
+
+  VERIFIED vs CAPTURED — NEVER confuse them (the KB holds both):
+     - **VERIFIED** = a `claims.jsonl` entry with `verdict: supported` (and it appears in `synthesis.md`) — each
+       tied to an exact quote in a stored source, cross-model-checked. ONLY these may back a finding, and ONLY
+       these are SINGLE-SOURCE-exempt. The subject is marked VERIFIED in INDEX.md.
+     - **CAPTURED-but-unverified** = the subject has `sources/` but NO `claims.jsonl` (or claims with verdict
+       `overreach`/`unsupported`/`pending`). This is RAW, UNVERIFIED material. Do NOT cite it as verified and do
+       NOT claim the SINGLE-SOURCE exemption for it — either run step 3 to verify it first, or treat it as an
+       ordinary finding subject to normal SINGLE-SOURCE flagging. The subject is marked CAPTURED in INDEX.md.
+     The verdict is recorded per-claim by the engine; trust the `verdict` field and `synthesis.md` membership,
+     not your memory of where a fact came from.
 
 If RESEARCH-KB-UNAVAILABLE:
   No research KB present. Use WebSearch/WebFetch / deep-research and record findings inline in RESEARCH-LOG.md as

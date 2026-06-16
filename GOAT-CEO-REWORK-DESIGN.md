@@ -415,12 +415,19 @@ correctness stay a human judgment. (Doctrine must say "traceable to source," nev
 
 ### §J.1 — The two payoff mechanics (why a 4th plane earns its keep)
 
-1. **Reuse-before-research (the compounding win).** Before commissioning an online research run, the technical
-   researcher queries the shared research KB. The system's own **abstention gate** decides whether the stored
-   corpus can answer the sub-questions with `min_support`: hit → cite the stored `synthesis.md`/`claims.jsonl`
-   and SKIP the online run (saves time + tokens); miss → it abstains, which is the trigger to research fresh and
-   capture it back. Over sessions the corpus compounds and online runs get rarer. The "enough hits" threshold is
-   the gate, not a guess.
+1. **Capture-always, verify-on-demand (the compounding win).** The technical researcher CAPTURES every external
+   source it consults into the shared KB (`run_capture` — FREE, no LLM: full source text + provenance), so the KB
+   grows comprehensively at near-zero cost. The expensive claim-level VERIFY (`run_research`) runs on demand —
+   when a subject warrants a verified synthesis, or when a query needs verified claims (it runs over already-captured
+   sources, no re-fetch). Reuse-before-research: a VERIFIED subject (`synthesis.md` present) → cite + SKIP the
+   online run; a CAPTURED-but-unverified subject → verify over stored sources rather than re-fetch. Over sessions
+   the KB compounds and online runs get rarer.
+   **Verified vs captured is RECORDED, not guessed** (your sources may be a mix): the engine stamps every claim
+   with a `verdict` (`supported`/`overreach`/`unsupported`/`pending`); `synthesis.md` contains ONLY `supported`
+   claims; a subject is VERIFIED iff it has `claims.jsonl`/`synthesis.md`, else CAPTURED-but-unverified (only
+   `sources/`). ONLY `verdict: supported` claims may back a finding or be SINGLE-SOURCE-exempt — raw captured
+   sources are unverified until `run_research` runs. (The abstention gate then decides "enough supported claims to
+   answer?" — the threshold is the gate, not a guess.)
 2. **Research → rubric standards (the cross-feature loop; see §I).** A subject like "evidence-based error-handling
    conventions for Python services" yields verified, SOURCED claims; those distill into candidate rubric
    rules/exemplars via rubric's `codify`/`.rubric/proposals/` flow, making rubric conventions evidence-backed with
