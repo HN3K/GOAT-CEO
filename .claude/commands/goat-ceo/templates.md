@@ -515,11 +515,17 @@ Write your verdict to agent-workspace/REVIEW-LOG.md under: ## Review A
   "verdict": "PASS" | "FAIL",
   "criteria_checked": ["<criterion 1>", "..."],
   "evidence": ["<file:line — what you verified>", "..."],
+  "cited_spans": [{"file": "<path>", "line": <n|null>, "quote": "<the EXACT verbatim code span (1-3 lines, copied from the file) backing this evidence>"}],
   "runtime_check_run": "<describe the runtime check you ran that the implementer did not>",
   "gaps": ["<gap description>", "..."],
   "single_source_flags": ["<finding from RESEARCH-LOG marked SINGLE-SOURCE that you could not independently verify>"]
 }
 ```
+
+For EVERY file:line you cite in `evidence`, include the EXACT verbatim code span in `cited_spans`
+(copy it from the file — do not paraphrase). The `check_span_validity.py` SubagentStop hook opens each
+cited span and blocks your verdict if a span does not exist in the file (a fabricated citation is the
+review equivalent of mock-only testing). Whitespace differences are tolerated; paraphrase is not.
 
 Send your verdict to {REPO_PREFIX}-overseer.
 ```
@@ -584,6 +590,7 @@ Write your verdict to agent-workspace/REVIEW-LOG.md under: ## Review B
   "verdict": "PASS" | "FAIL",
   "criteria_checked": ["<criterion 1>", "..."],
   "evidence": ["<file:line — what you verified>", "..."],
+  "cited_spans": [{"file": "<path>", "line": <n|null>, "quote": "<the EXACT verbatim code/test span (copied from the file) backing this evidence or reward-hack finding>"}],
   "test_classification": {
     "real_execution": ["<test names>"],
     "mock_simulation": ["<test names>"],

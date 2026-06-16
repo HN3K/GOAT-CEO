@@ -333,12 +333,16 @@ print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components 
   calls/finding, per file, serial). The judge composes Review C: `blocking_violations` = FAIL-facts;
   `verified_advisory` = an already-verified lens. Reviewer C is naturally audit-exempt (`reviewer:"C"`).
   Wiring: templates §12a + §14 + §17 kernel; `goat-ceo.md` Phase 5; `roster.md`; a `rules.md` row.
-- **v2 still deferred:** **(highest-value next)** graft rubric's **mechanical span-check** onto GOAT's A/B
-  *correctness* reviewers — the one rubric mechanism strictly superior even for correctness (GOAT's read-floor
-  counts *that* ≥5 reads happened, not *that* a cited `file:line` resolves; a fabricated `foo.py:213` survives).
-  A `SubagentStop` validator that opens each cited span and confirms it exists would harden A/B/judge findings.
-  Also deferred: the native PostToolUse self-heal gate (needs a per-file heal-cap wrapper to fit `maxTurns:30`);
-  the `codify --draft` loop at session close; cross-repo conventions sharing via `rubricConventions`.
+- **v2 span-check graft — BUILT (2026-06-15).** Grafted rubric's mechanical span-check onto GOAT's A/B
+  *correctness* reviewers: they now emit `cited_spans:[{file,line,quote}]`, and `.claude/hooks/check_span_validity.py`
+  (`SubagentStop`) opens each cited span and blocks the verdict (exit 2) if it does not exist in the file
+  (whitespace-normalized). This is the one rubric mechanism strictly superior even for correctness — GOAT's
+  read-floor counts *that* ≥5 reads happened, not *that* a cited `foo.py:213` resolves. Guards against false
+  blocks (parses only the reviewer's own assistant output, skips placeholders/prompt-echo, requires a substantive
+  quote, fail-open). Tested across valid / fabricated / file-not-found / placeholder / prompt-only / trivial /
+  exempt / whitespace cases. Judge/critic/Reviewer-C exempt.
+- **v2 still deferred:** the native PostToolUse self-heal gate (needs a per-file heal-cap wrapper to fit
+  `maxTurns:30`); the `codify --draft` loop at session close; cross-repo conventions sharing via `rubricConventions`.
 
 ### §I.5 — Caveats & top risks
 
