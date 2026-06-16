@@ -28,13 +28,14 @@ User input: `$ARGUMENTS`
 
 ## Live state (read first, every time, before drawing any menu)
 
-Committed global defaults — `.claude/goat-features.json` (Tier 1, tracked, cross-machine):
-!`cat .claude/goat-features.json 2>/dev/null | jq '.defaults' 2>/dev/null || echo '{}  (file missing — treat all defaults as off)'`
+Default layer — the shipped baseline (`.claude/goat-features.json`, committed, all-off) overlaid with
+YOUR personal overrides (`.claude/goat-features.local.json`, gitignored, local-only):
+!`echo 'shipped baseline:'; cat .claude/goat-features.json 2>/dev/null | jq '.defaults' 2>/dev/null || echo '{} (missing — treat as all off)'; echo 'your local overrides:'; cat .claude/goat-features.local.json 2>/dev/null | jq '.defaults' 2>/dev/null || echo '(none)'`
 
-Per-repo activation — `repo-registry.json` (Tier 2, machine-local):
+Per-repo activation — `repo-registry.json` (local-only, never published):
 !`cat repo-registry.json 2>/dev/null | jq '(.repos // {}) | map_values({access, rubricStatus, researchKbStatus, indexStatus})' 2>/dev/null || echo '(no registry yet)'`
 
-Session toggles — `agent-workspace/` sentinels + env (Tier 3, ephemeral):
+Session toggles — `agent-workspace/` sentinels + env (this session only):
 !`( ls agent-workspace/ 2>/dev/null | grep -E '^(STRICT_MODE|AUTONOMOUS-ACTIVE|INTAKE-ACTIVE|STOP|READONLY-PATHS\.json)$' || echo '(no session sentinels)' ); echo "GOAT_CEO_STRICT=${GOAT_CEO_STRICT:-unset}"`
 
 ---
@@ -68,7 +69,7 @@ longer lists into ≤4 buckets and drill down; never hide a feature.
    session) + applicability in one short block, so the operator sees what overrides what.
 2. Call `AskUserQuestion` with that feature's ACTIONS. If it has ≤4, list them directly. If more (e.g.
    rubric), ask the CATEGORY first, then the specific action in a follow-up `AskUserQuestion`:
-   - **Toggle** — enable / disable (per-repo) · set global default · unset override
+   - **Toggle** — enable / disable (per-repo) · set personal default · unset override
    - **Inspect** — `status` (what's enforced) · `measure`
    - **Run** — `seed` · `gate <files>` · `verify <file>` · `codify <files>`
    - **Self-heal** — `heal on/off`
@@ -81,7 +82,7 @@ longer lists into ≤4 buckets and drill down; never hide a feature.
 ### C. Acting on a choice
 - **State changes** (enable/disable/set-default/unset, heal on/off): make the binary/scope decision
   itself an `AskUserQuestion` where natural — `on | off`; **which repo** (offer the registered repos as
-  options + "Other"); **per-repo vs global default**. Then state EXACTLY which file/field/sentinel will
+  options + "Other"); **per-repo vs personal default**. Then state EXACTLY which file/field/sentinel will
   change, perform the write, re-show the feature's state with new provenance, and return to (B).
 - **Feature actions** (rubric status/seed/gate/measure/verify/codify, research status/capture/run/
   benchmark): run the mapped command(s) from **Feature actions**; for `rubric seed` follow that
@@ -105,7 +106,7 @@ menu actions.
 | `list` | Every feature + one-line description + applicability. | nothing |
 | `enable <feature> [repo]` | Per-repo ON override (Tier 2). | `repo-registry.json` |
 | `disable <feature> [repo]` | Per-repo explicit OFF (Tier 2). | `repo-registry.json` |
-| `set-default <feature> on\|off` | Committed global default (Tier 1). | `.claude/goat-features.json` |
+| `set-default <feature> on\|off` | Your **personal** default (gitignored, local-only — not published). | `.claude/goat-features.local.json` |
 | `unset <feature> [repo]` | Remove a repo's override → fall back to default. | `repo-registry.json` |
 | `<feature> <action> …` | Forward to that feature's action handler. | varies |
 
@@ -117,39 +118,42 @@ documented schema (`goat-ceo.md` Step 1.1) rather than erroring.
 
 ## State model & precedence (recite on `status` / full-status)
 
-Optional features live in **three tiers**, because defaults must travel across machines while per-repo
-activation is local and session toggles are throwaway:
+Optional features resolve across these layers; **none of a user's personal choices are ever
+committed/published** — only the neutral shipped baseline is in git:
 
-1. **Tier 1 — committed global default** (`.claude/goat-features.json` → `defaults.<feature>`): is the
-   feature on *by default*? Tracked in git, so another machine inherits it on pull.
-2. **Tier 2 — per-repo override** (`repo-registry.json` per-repo fields: `rubricStatus`,
-   `researchKbStatus`, `indexStatus`, `access`): activate/deactivate for a *specific* repo.
-   Machine-local (absolute paths), never committed.
-3. **Tier 3 — session toggle** (`agent-workspace/` sentinels like `STRICT_MODE`, `AUTONOMOUS-ACTIVE`;
-   or env `GOAT_CEO_STRICT`): this-session-only, gitignored.
+1. **Built-in default** — OFF for every optional feature.
+2. **Shipped baseline** (`.claude/goat-features.json`, committed): the project's neutral default
+   (everything OFF). This file is shared with everyone who uses GOAT-CEO, so it is NOT for personal
+   preferences — leave it at the baseline unless you are deliberately changing the project default.
+3. **Personal default** (`.claude/goat-features.local.json`, **gitignored, local-only**): your own
+   default for a feature, overlaying the baseline. Never published or imposed on other users.
+   **`set-default` writes HERE.**
+4. **Per-repo override** (`repo-registry.json` fields: `rubricStatus`, `researchKbStatus`,
+   `indexStatus`, `access`): activate/deactivate for a *specific* repo. Local-only, never committed.
+5. **Session toggle** (`agent-workspace/` sentinels like `STRICT_MODE`, `AUTONOMOUS-ACTIVE`; or env
+   `GOAT_CEO_STRICT`): this-session-only, gitignored.
 
-**Precedence — most specific wins:** `built-in (OFF) < Tier 1 global default < Tier 2 per-repo override
-< Tier 3 session sentinel`. In one sentence: *"session beats per-repo, per-repo beats global, global
-beats the built-in OFF."*
+**Precedence — most specific wins:** `built-in (OFF) < shipped baseline < personal default < per-repo
+override < session sentinel`.
 
-**Safe-by-default:** every optional feature's built-in default is **OFF**; enabling is deliberate. A
+**Safe-by-default:** every feature's built-in default is **OFF**; enabling is deliberate. A
 missing/malformed value falls back to OFF rather than erroring. Never bulk "enable all". Probe
 applicability per repo and skip features that don't apply.
 
 **`status` line shape (provenance is the point):** `feature = <on|off|n/a> (<source>)`, e.g.
-`rubric = on (per-repo: craft)`, `research-kb = off (global default)`,
+`rubric = on (personal default)`, `research-kb = off (shipped baseline)`,
 `strict-mode = on (session: STRICT_MODE)`, `codebase-index = n/a (no Codebase-Index/ in this repo)`.
 
 ## Feature registry (the canonical list of what's toggleable)
 
 | Feature | Tier(s) | What it does | ON mechanism | OFF mechanism | Applicability probe |
 |---|---|---|---|---|---|
-| **rubric** | 1 + 2 | Standards grounding (`rubric context`) + `RUBRIC.GATE` (`rubric check`) + Reviewer-C | repo `rubricStatus: "RUBRIC-AVAILABLE"`; default in `goat-features.json` | `rubricStatus: "RUBRIC-UNAVAILABLE"` | `.rubric/` exists AND `rubric kb --kb .rubric/kb` exits 0 |
-| **research-kb** | 1 + shared | Capture-always / verify-on-demand research KB vs ephemeral WebSearch | create `research-kb/` + `researchKbStatus: "RESEARCH-KB-AVAILABLE"`; default in `goat-features.json` | `RESEARCH-KB-UNAVAILABLE` | `tools/research-system` importable AND `research-kb/` present/creatable |
+| **rubric** | 1 + 2 | Standards grounding (`rubric context`) + `RUBRIC.GATE` (`rubric check`) + Reviewer-C | repo `rubricStatus: "RUBRIC-AVAILABLE"`; personal default in `goat-features.local.json` | `rubricStatus: "RUBRIC-UNAVAILABLE"` | `.rubric/` exists AND `rubric kb --kb .rubric/kb` exits 0 |
+| **research-kb** | 1 + shared | Capture-always / verify-on-demand research KB vs ephemeral WebSearch | create `research-kb/` + `researchKbStatus: "RESEARCH-KB-AVAILABLE"`; personal default in `goat-features.local.json` | `RESEARCH-KB-UNAVAILABLE` | `tools/research-system` importable AND `research-kb/` present/creatable |
 | **codebase-index** | 2 | Agents use `search`/`inject`/`check` vs direct reads | `indexStatus: "INDEX-AVAILABLE"` (detection-driven) | `INDEX-UNAVAILABLE` | `Codebase-Index/` + `codebase-index-tools` respond |
-| **strict-mode** | 1 + 3 | Degraded-allow paths (e.g. test gate w/ no config) BLOCK instead of warn-allow | `touch agent-workspace/STRICT_MODE` or env `GOAT_CEO_STRICT=1`; default in `goat-features.json` | `rm agent-workspace/STRICT_MODE` + unset env | always |
+| **strict-mode** | 1 + 3 | Degraded-allow paths (e.g. test gate w/ no config) BLOCK instead of warn-allow | `touch agent-workspace/STRICT_MODE` or env `GOAT_CEO_STRICT=1`; personal default in `goat-features.local.json` | `rm agent-workspace/STRICT_MODE` + unset env | always |
 | **rubric-heal-gate** | 2 (manual) | Opt-in PostToolUse self-heal (≤2 cycles/file) in a TARGET repo | copy `.claude/hooks/rubric_heal_gate.py` into the target repo's `.claude/hooks/` + wire PostToolUse `Edit\|Write` | remove that wiring | rubric available in the target repo |
-| **unattended** | 1 + 3 | Keep-going / survive-compaction layer | `touch agent-workspace/AUTONOMOUS-ACTIVE` (empty = all sessions; `session:<id>` = scoped); default in `goat-features.json` | `rm agent-workspace/AUTONOMOUS-ACTIVE` | always; read `unattended-mode.md` first |
+| **unattended** | 1 + 3 | Keep-going / survive-compaction layer | `touch agent-workspace/AUTONOMOUS-ACTIVE` (empty = all sessions; `session:<id>` = scoped); personal default in `goat-features.local.json` | `rm agent-workspace/AUTONOMOUS-ACTIVE` | always; read `unattended-mode.md` first |
 | **read-only-reference** | 2 + 3 | Mark a repo readable-but-never-writable | `access: "ro-reference"` + add path to `agent-workspace/READONLY-PATHS.json` | remove from both | per reference repo |
 | **destructive-db-guard** | user-scope (manual) | Block `DROP/RESTORE DATABASE` without a token | wire `guard_destructive_db.py` at USER scope (`~/.claude/settings.json`) | unwire | only repos that touch a DB |
 

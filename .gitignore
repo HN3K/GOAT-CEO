@@ -7,9 +7,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Local-only state — each user generates their own
+# Local-only state — each user generates their own (never published / imposed on others)
 repo-registry.json
 .claude/agent-memory/
+.claude/goat-features.local.json
 
 # Shared external-research KB corpus (Research System, RESEARCH-KB-AVAILABLE) — grows per session,
 # not committed (like logs/). The vendored engine is tools/research-system/; the corpus is the product.
