@@ -49,6 +49,15 @@ hard/gate/advisory map.
 - **Opt-in strict / fail-closed mode** (`STRICT_MODE` sentinel) plus a `HOOK-FAILURES.jsonl` audit
   trail of every fail-open event — fail-closed on policy violations/missing artifacts only, never on
   a hook crash (C20).
+- **`/goat-ceo:features` command** (`.claude/commands/goat-ceo/features.md`) + committed defaults
+  (`.claude/goat-features.json`) — one entry point to see/toggle the optional capabilities across a
+  three-tier model (committed global defaults → per-repo override in `repo-registry.json` → session
+  sentinels), with git-style precedence and effective-state-with-provenance display. Verb set:
+  `status`/`list`/`enable`/`disable`/`set-default`/`unset` plus forwarded feature actions. Includes an
+  agent-driven **`rubric seed`** flow that discovers candidate standards from the repo's own code AND
+  from internet best-practice research, then has the operator pick which to adopt (each with a
+  rationale) before authoring them into `.rubric/kb/` — the in-session research→rubric-KB bridge that
+  rubric otherwise lacks.
 
 ### Changed
 

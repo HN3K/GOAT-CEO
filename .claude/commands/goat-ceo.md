@@ -221,6 +221,14 @@ Independently, record the research-KB status under `"researchKbStatus"` (SHARED 
 - **RESEARCH-KB-AVAILABLE** — the Research System engine imports and `research-kb/` is present/creatable. The technical researcher (templates §7) CHECKS the KB before commissioning online research (reuse-before-research) and captures persist-worthy subjects into it.
 - **RESEARCH-KB-UNAVAILABLE** — engine missing or deps not installed. Researchers use WebSearch / the `deep-research` skill as today (ephemeral). OPTIONAL — never blocks the pipeline.
 
+> **Defaults & the features command.** Whether each optional capability is on *by default* is governed
+> by the committed `.claude/goat-features.json` (Tier 1; everything OFF by default). Consult it when
+> deciding default enablement and which bootstrap to offer, and point the operator at the
+> **`/goat-ceo:features`** command to see effective state (with provenance), flip a global default,
+> activate a feature for a specific repo, or run feature actions (e.g. `rubric seed`, `rubric status`,
+> `research run`). Detection above still gates real availability — a default-on feature a repo can't
+> actually use stays inert (and `status` flags it).
+
 For any repo with missing components, present:
 
 > "[Repo] is missing: [list]. Options:

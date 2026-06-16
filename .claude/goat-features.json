@@ -1,0 +1,20 @@
+{
+  "_comment": "Committed GLOBAL DEFAULTS for GOAT-CEO optional features (Tier 1). Managed by the /goat-ceo:features command. This file is tracked in git and travels across machines, so it answers 'is feature X on by DEFAULT?'. Per-repo activation (Tier 2) lives in repo-registry.json fields (machine-local — absolute paths); session-only toggles (Tier 3) live as agent-workspace/ sentinels (gitignored). PRECEDENCE (most specific wins): built-in default (OFF) < this global default < per-repo override < session sentinel. SAFE-BY-DEFAULT: every optional feature defaults to 'off'; enabling is an explicit act. A missing/malformed value falls back to the built-in default ('off') rather than erroring.",
+  "schemaVersion": 1,
+  "defaults": {
+    "rubric": "off",
+    "research-kb": "off",
+    "codebase-index": "off",
+    "strict-mode": "off",
+    "rubric-heal-gate": "off",
+    "unattended": "off"
+  },
+  "_notes": {
+    "rubric": "When on, a repo that is RUBRIC-AVAILABLE gets standards grounding + RUBRIC.GATE + Reviewer-C by default. Enablement still requires the repo to actually have a .rubric/ KB and the rubric CLI on PATH (detected at intake).",
+    "research-kb": "When on, the technical researcher uses the shared research-kb/ (capture-always, verify-on-demand) instead of ephemeral WebSearch. Requires tools/research-system installed and research-kb/ present/creatable.",
+    "codebase-index": "When on, agents prefer search/inject/check over direct reads where a Codebase-Index/ + tooling are present. Detection-driven per repo.",
+    "strict-mode": "When on, documented degraded-allow paths (e.g. the test gate with no config) BLOCK instead of warn-allow. Also settable per-session via agent-workspace/STRICT_MODE or env GOAT_CEO_STRICT.",
+    "rubric-heal-gate": "When on, RUBRIC-AVAILABLE target repos get the opt-in PostToolUse self-heal hook (rubric_heal_gate.py, capped <=2 cycles/file). Must be copied + wired into the TARGET repo's .claude/ (per-repo, manual).",
+    "unattended": "When on, sessions default to the keep-going / survive-compaction layer (agent-workspace/AUTONOMOUS-ACTIVE). Leave OFF unless you genuinely run unattended; see commands/goat-ceo/unattended-mode.md."
+  }
+}
