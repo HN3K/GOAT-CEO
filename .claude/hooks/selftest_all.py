@@ -280,6 +280,12 @@ def assistant_msg(text):
             "content": [{"type": "text", "text": text}]}}
 
 
+def tool_use_msg(name, tool_input):
+    """A JSONL transcript line representing an assistant tool_use block."""
+    return {"role": "assistant", "message": {"role": "assistant",
+            "content": [{"type": "tool_use", "name": name, "input": tool_input}]}}
+
+
 # ===========================================================================
 # CHECK GROUPS
 # ===========================================================================
@@ -425,6 +431,32 @@ def check_F_artifacts():
     with workspace_absent("PLAN.md"):
         assert_exit("F.architect without PLAN.md blocks", "check_artifacts.py",
                     {"agent_type": "team-architect", "cwd": "."}, 2)
+    # (7) anti-stale: a STALE IMPLEMENTER-RESULT (different sessionId, endHead != current
+    #     HEAD) must NOT clear a no-op implementer (clean tree, HEAD == startHead) -> BLOCK.
+    tmp3, head3 = make_temp_git_repo()
+    _TMP_DIRS.append(tmp3)
+    sid3 = "selftest-impl-sid-3"
+    stale_result = {
+        "sessionId": "OTHER-OLD-SESSION", "batchId": "old-batch",
+        "startHead": "0" * 40, "endHead": "a" * 40,
+        "changedFiles": ["src/old.py"],
+    }
+    with workspace_file("AGENT-START-TIMES.json", {sid3 + "_startHead": head3}):
+        with workspace_absent("IMPLEMENTATION-MANIFEST.json"):
+            with workspace_file("IMPLEMENTER-RESULT.stale.json", stale_result):
+                assert_exit("F.impl stale result still blocks", "check_artifacts.py",
+                            {"agent_type": "team-implementer", "cwd": tmp3,
+                             "session_id": sid3, "agent_transcript_path": ""}, 2)
+            # (8) a CURRENT-RUN result (sessionId matches) clears a clean no-op tree -> ALLOW.
+            current_result = {
+                "sessionId": sid3, "batchId": "cur",
+                "startHead": head3, "endHead": "f" * 40,
+                "changedFiles": ["src/new.py"],
+            }
+            with workspace_file("IMPLEMENTER-RESULT.current.json", current_result):
+                assert_exit("F.impl current-run result allows", "check_artifacts.py",
+                            {"agent_type": "team-implementer", "cwd": tmp3,
+                             "session_id": sid3, "agent_transcript_path": ""}, 0)
 
 
 def check_G_review_gate():
@@ -440,6 +472,11 @@ def check_G_review_gate():
             with workspace_file("JUDGE-VERDICT.json",
                                 {"role": "judge", "verdict": "FAIL"}):
                 assert_exit("G.judge FAIL blocks", "check_review_gate.py", payload, 2)
+            # (4) judge PASS but NON-EMPTY blockingFindingsRemaining -> BLOCK (contradictory)
+            with workspace_file("JUDGE-VERDICT.json",
+                                {"role": "judge", "verdict": "PASS",
+                                 "blockingFindingsRemaining": ["critical issue still open"]}):
+                assert_exit("G.judge PASS+blockers blocks", "check_review_gate.py", payload, 2)
         # (2) REVIEW-LOG.md with only a non-judge PASS, no JUDGE-VERDICT.json -> BLOCK
         review_log = '```json\n{"verdict": "PASS", "reviewer": "A"}\n```\n'
         with workspace_absent("JUDGE-VERDICT.json"):
@@ -495,6 +532,17 @@ def check_H_span_validity():
                 {"agent_type": "team-verifier", "cwd": tmp,
                  "agent_transcript_path": tx_bad}, 2)
 
+    # (4) reviewer A span with NO line anchor (line:null) -> BLOCK. The quote DOES exist
+    #     in the file, so this only blocks because A/B spans must be line-anchored (no
+    #     whole-file-substring fallback for the gate).
+    noline_span = ('{"reviewer":"A","verdict":"PASS","cited_spans":['
+                   '{"file":"module.py","line":null,'
+                   '"quote":"return x * 42 + special_constant"}]}')
+    tx_noline = temp_jsonl([assistant_msg("Review missing line " + noline_span)])
+    assert_exit("H.reviewer A missing-line span blocks", "check_span_validity.py",
+                {"agent_type": "team-verifier", "cwd": tmp,
+                 "agent_transcript_path": tx_noline}, 2)
+
 
 def check_I_partition():
     disjoint = {"batches": [
@@ -525,6 +573,78 @@ def check_J_phase_gate():
         with workspace_file("SELFTEST.GATE", "ok"):
             assert_exit("J.present gate sentinel allows", "check_phase_gate.py",
                         payload, 0)
+
+
+def check_K_read_audit():
+    """Reviewer read-audit (C6): the diff-tie must use the changed-set fallback chain.
+
+    The changed set here comes from a central IMPLEMENTER-RESULT*.json `changedFiles`
+    (the head of the fallback chain). A reviewer whose 5 reads miss the changed set is
+    BLOCKED; one whose reads cover it is ALLOWED."""
+    changed = ["src/a.py", "src/b.py", "src/c.py"]
+    result = {"sessionId": "k", "batchId": "k", "startHead": "0" * 40,
+              "endHead": "1" * 40, "changedFiles": changed}
+    verdict = assistant_msg('My verdict: {"reviewer":"A","verdict":"PASS"}')
+    # (1) 5 reads but only 1 in the changed set -> BLOCK (fails the diff-tie floor).
+    miss_paths = ["src/a.py", "docs/x.md", "docs/y.md", "README.md", "other/z.py"]
+    tx_miss = temp_jsonl([tool_use_msg("Read", {"file_path": p}) for p in miss_paths]
+                         + [verdict])
+    # (2) reads the 3 changed files + 2 others -> ALLOW.
+    hit_paths = ["src/a.py", "src/b.py", "src/c.py", "README.md", "other/z.py"]
+    tx_hit = temp_jsonl([tool_use_msg("Read", {"file_path": p}) for p in hit_paths]
+                        + [verdict])
+    # Remove any real manifest so the result file is the deterministic changed-set source.
+    with workspace_absent("IMPLEMENTATION-MANIFEST.json"):
+        with workspace_file("IMPLEMENTER-RESULT.ktest.json", result):
+            assert_exit("K.read-audit misses changed set blocks", "check_toolcall_audit.py",
+                        {"agent_type": "team-verifier", "cwd": ".",
+                         "agent_transcript_path": tx_miss}, 2)
+            assert_exit("K.read-audit covers changed set allows", "check_toolcall_audit.py",
+                        {"agent_type": "team-verifier", "cwd": ".",
+                         "agent_transcript_path": tx_hit}, 0)
+
+
+def check_L_commit_wrappers():
+    """Commit wrappers reject the full sweep set (aligned with guard_git_commit.py).
+
+    Runs the wrapper(s) in a THROWAWAY git repo so a hypothetical validation miss can
+    only touch that repo, never the real one. Best-effort: SKIP if the interpreter is
+    not on PATH (the suite must run on any OS)."""
+    tmp, _ = make_temp_git_repo()
+    _TMP_DIRS.append(tmp)
+    forbidden = [".", "./", "-A", "--all", "-u", "--update", "*", ":", ":/"]
+
+    def _run_wrapper(label_prefix, argv_prefix, script):
+        if not os.path.exists(script):
+            record_skip(label_prefix + " commit wrapper", "wrapper missing")
+            return
+        for ps in forbidden:
+            try:
+                proc = subprocess.run(
+                    argv_prefix + [script, "selftest-should-not-commit", ps],
+                    capture_output=True, text=True, cwd=tmp,
+                )
+            except Exception as exc:  # pragma: no cover
+                record_fail(label_prefix + " blocks " + ps, 1, "EXC", str(exc))
+                continue
+            if proc.returncode == 1:
+                record_pass(label_prefix + " blocks " + ps)
+            else:
+                tail = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")[:160]
+                record_fail(label_prefix + " blocks " + ps, 1, proc.returncode, tail)
+
+    sh = shutil.which("bash")
+    if sh:
+        _run_wrapper("L.sh", [sh], os.path.join(HOOKS_DIR, "ceo-commit.sh"))
+    else:
+        record_skip("L.sh commit wrapper", "bash not on PATH")
+
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    if pwsh:
+        _run_wrapper("L.ps1", [pwsh, "-NoProfile", "-File"],
+                     os.path.join(HOOKS_DIR, "ceo-commit.ps1"))
+    else:
+        record_skip("L.ps1 commit wrapper", "powershell not on PATH")
 
 
 # ===========================================================================
@@ -622,6 +742,8 @@ def main():
         check_H_span_validity()
         check_I_partition()
         check_J_phase_gate()
+        check_K_read_audit()
+        check_L_commit_wrappers()
     finally:
         cleanup_tmp_files()
         cleanup_tmp()

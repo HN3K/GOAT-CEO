@@ -66,8 +66,23 @@ def _is_judge(obj: dict) -> bool:
 
 
 def _verdict_of(obj: dict) -> str | None:
+    """Normalize a judge object's verdict to 'PASS' / 'FAIL' / 'PASS_BLOCKED' / None.
+
+    A 'PASS' that still carries a NON-EMPTY blockingFindingsRemaining list is
+    self-contradictory — the judge declared open blockers AND passed. Such a verdict
+    must NOT close the gate, so it is reported as 'PASS_BLOCKED' (a blocking state).
+    An absent/empty blockingFindingsRemaining is treated as "no declared blockers"
+    and a plain PASS stands (keeps the documented minimal `{"verdict":"PASS",
+    "judge":"..."}` form valid).
+    """
     v = str(obj.get("verdict", "")).upper()
-    return v if v in ("PASS", "FAIL") else None
+    if v not in ("PASS", "FAIL"):
+        return None
+    if v == "PASS":
+        blockers = obj.get("blockingFindingsRemaining")
+        if isinstance(blockers, list) and len(blockers) > 0:
+            return "PASS_BLOCKED"
+    return v
 
 
 def _read_verdict() -> str | None:
@@ -162,6 +177,16 @@ def main() -> int:
                 '"reviewersConsidered":[],"blockingFindingsRemaining":[]} OR a fenced '
                 'json block in REVIEW-LOG.md with BOTH "role":"judge" AND a verdict, '
                 "before this task can close."
+            )
+            return 2
+
+        if verdict == "PASS_BLOCKED":
+            sys.stderr.write(
+                "REVIEW GATE BLOCK: judge verdict is PASS but blockingFindingsRemaining "
+                "is NON-EMPTY — a PASS that still lists unresolved blocking findings is "
+                "contradictory and cannot close the task. Resolve (or re-classify) every "
+                "entry in blockingFindingsRemaining and re-issue the judge verdict with an "
+                "empty list. (Review iteration {}/{})".format(iteration, MAX_ITERATIONS)
             )
             return 2
 

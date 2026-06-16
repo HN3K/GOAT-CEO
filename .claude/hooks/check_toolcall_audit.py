@@ -19,11 +19,18 @@ reviewer verdict marker `"reviewer": "A"|"B"` to be present before enforcing the
 Design contract: FAIL-OPEN on any internal error. exit 0 = allow stop; exit 2 = BLOCK
 (stderr shown to the agent). Dependency-free (stdlib only).
 """
+import glob as _glob
 import json
 import os
 import re
 import subprocess
 import sys
+
+# Central GOAT-CEO workspace (this hook lives in .claude/hooks/, so REPO_ROOT is
+# three dirs up). The batch baseline / implementer evidence often lives HERE rather
+# than in the reviewer's own worktree, so the changed-set derivation consults it.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+WORKSPACE = os.path.join(REPO_ROOT, "agent-workspace")
 
 MIN_READ_CALLS = 5
 # C6: of the reviewer's path-bearing reads, at least this many must land in the
@@ -97,42 +104,115 @@ def _norm_rel(p, cwd):
     return s.strip("/").casefold()
 
 
-def _changed_set(cwd):
-    """Return a set of normalized changed paths from git diff, or None if undeterminable.
-
-    Baseline comes from agent-workspace/BASELINE.txt under cwd. If there is no reliable
-    baseline we return None (rather than guessing HEAD~1, which false-blocks multi-commit
-    batches) so the caller can fail-soft to the name-count floor."""
+def _read_json(path):
     try:
-        if not cwd or not os.path.isdir(cwd):
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
             return None
-        baseline = None
-        bpath = os.path.join(cwd, "agent-workspace", "BASELINE.txt")
-        if os.path.exists(bpath):
-            try:
-                with open(bpath, "r", encoding="utf-8", errors="replace") as fh:
-                    cand = fh.read().strip().split()
-                    if cand:
-                        baseline = cand[0]
-            except OSError:
-                baseline = None
-        if not baseline:
-            # No reliable batch baseline (agent-workspace/BASELINE.txt). Do NOT guess
-            # with HEAD~1..HEAD — on a multi-commit batch that yields a too-narrow diff
-            # and would false-BLOCK a reviewer who actually read the real changes. Return
-            # None so the caller fails soft to the name-count floor instead. (F1)
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _changed_from_results():
+    """Union of `changedFiles` across central IMPLEMENTER-RESULT*.json. Set or None.
+
+    The implementer's own declared diff — the most direct, git-free source of the
+    change under review."""
+    files = set()
+    for path in _glob.glob(os.path.join(WORKSPACE, "IMPLEMENTER-RESULT*.json")):
+        obj = _read_json(path)
+        if not isinstance(obj, dict):
+            continue
+        changed = obj.get("changedFiles")
+        if isinstance(changed, list):
+            for p in changed:
+                if isinstance(p, str) and p.strip():
+                    files.add(p)
+    return files or None
+
+
+def _changed_from_manifest():
+    """Union of every batch's `files[]` in central IMPLEMENTATION-MANIFEST.json.
+
+    The declared change scope for the whole partition. Used when no per-batch
+    implementer result is available."""
+    obj = _read_json(os.path.join(WORKSPACE, "IMPLEMENTATION-MANIFEST.json"))
+    if not isinstance(obj, dict):
+        return None
+    batches = obj.get("batches")
+    if not isinstance(batches, list):
+        return None
+    files = set()
+    for b in batches:
+        if not isinstance(b, dict):
+            continue
+        for p in b.get("files") or []:
+            if isinstance(p, str) and p.strip():
+                files.add(p)
+    return files or None
+
+
+def _baseline_from(path):
+    """First whitespace-delimited token of a BASELINE.txt at `path`, or None."""
+    try:
+        if not os.path.isfile(path):
             return None
-        rng = baseline + "..HEAD"
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            cand = fh.read().strip().split()
+        return cand[0] if cand else None
+    except OSError:
+        return None
+
+
+def _changed_from_git(cwd):
+    """git diff <baseline>..HEAD in `cwd`, where the baseline comes from BASELINE.txt
+    under the reviewer cwd OR the central GOAT-CEO agent-workspace/. Set or None.
+
+    We do NOT guess HEAD~1..HEAD without a real baseline — on a multi-commit batch that
+    yields a too-narrow diff and would false-BLOCK a reviewer who read the real changes (F1)."""
+    if not cwd or not os.path.isdir(cwd):
+        return None
+    baseline = (
+        _baseline_from(os.path.join(cwd, "agent-workspace", "BASELINE.txt"))
+        or _baseline_from(os.path.join(WORKSPACE, "BASELINE.txt"))
+    )
+    if not baseline:
+        return None
+    try:
         proc = subprocess.run(
-            ["git", "-C", cwd, "diff", "--name-only", rng],
+            ["git", "-C", cwd, "diff", "--name-only", baseline + "..HEAD"],
             capture_output=True, text=True, timeout=15,
         )
-        if proc.returncode != 0:
-            return None
-        out = proc.stdout or ""
-        changed = {_norm_rel(line, cwd) for line in out.splitlines() if line.strip()}
-        changed.discard("")
-        return changed if changed else None
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    changed = {_norm_rel(line, cwd) for line in (proc.stdout or "").splitlines() if line.strip()}
+    changed.discard("")
+    return changed or None
+
+
+def _changed_set(cwd):
+    """Return a set of normalized changed paths, or None if undeterminable.
+
+    Source order — first that yields a non-empty set wins (C6 fallback chain). The
+    real batch baseline frequently lives in the CENTRAL GOAT-CEO agent-workspace/ rather
+    than the reviewer's worktree, so relying on a single cwd-local BASELINE.txt
+    degraded the diff-tied check to the bare name-count floor too often:
+      1. central IMPLEMENTER-RESULT*.json `changedFiles` (implementer's declared diff);
+      2. central IMPLEMENTATION-MANIFEST.json batch `files[]` (declared change scope);
+      3. git diff against a BASELINE.txt (reviewer cwd, then central workspace).
+    Only None (caller fail-soft to the name floor) if every source is empty."""
+    try:
+        for source in (_changed_from_results, _changed_from_manifest):
+            raw = source()
+            if raw:
+                norm = {_norm_rel(p, cwd) for p in raw}
+                norm.discard("")
+                if norm:
+                    return norm
+        return _changed_from_git(cwd)
     except Exception:
         return None
 

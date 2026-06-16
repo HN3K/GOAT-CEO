@@ -197,15 +197,31 @@ def main():
                 fabricated.append("{} (cited file not found)".format(f))
                 continue
             cited_line = _parse_line(sp.get("line"))
-            # C7(b) — validate within the cited line window (± LINE_WINDOW), not anywhere.
-            if not _quote_in_window(q, content, cited_line):
-                where = (
-                    "near line {} (±{})".format(cited_line, LINE_WINDOW)
-                    if cited_line is not None else "anywhere in file"
-                )
+            # C7(b) — A/B verdicts must be LINE-ANCHORED. A missing or out-of-range
+            # `line` is itself a block here (this is a mechanical anti-hallucination
+            # gate): without a real line we cannot localize the citation, and the
+            # whole-file-substring fallback would let a reviewer cite any text that
+            # appears anywhere in the file. (Whole-file fallback in _quote_in_window
+            # is retained only for advisory, non-gated callers.)
+            n_lines = len(content.splitlines())
+            if cited_line is None:
                 fabricated.append(
-                    "{}:{} — cited span not found {}: {!r}".format(
-                        f, sp.get("line"), where, q[:80]
+                    "{} — citation has no usable `line` anchor; an A/B verdict span must "
+                    "cite the real line so the quote is checkable at that location: "
+                    "{!r}".format(f, q[:80])
+                )
+                continue
+            if cited_line < 1 or cited_line > n_lines:
+                fabricated.append(
+                    "{}:{} — cited line is out of range (file has {} lines); cannot "
+                    "anchor the quote: {!r}".format(f, sp.get("line"), n_lines, q[:80])
+                )
+                continue
+            # In-range line — validate within the cited window (± LINE_WINDOW), not anywhere.
+            if not _quote_in_window(q, content, cited_line):
+                fabricated.append(
+                    "{}:{} — cited span not found near line {} (±{}): {!r}".format(
+                        f, sp.get("line"), cited_line, LINE_WINDOW, q[:80]
                     )
                 )
 

@@ -40,8 +40,10 @@ hard/gate/advisory map.
   gate, replacing the always-passing `git log --oneline -1` probe (C1).
 - **`JUDGE-VERDICT.json`** as the single role-attributed source the review gate reads, instead of
   "last PASS block wins" (C5).
-- **`TEST-CONFIG.json`** structured test gate (target-repo cwd, command, timeout, min test count)
-  with a loud `TEST-GATE-DEGRADED` sentinel when absent (C3).
+- **`TEST-CONFIG.json`** structured test gate (target-repo `workingDirectory`, a list of required
+  commands each with its own `timeoutSeconds`, plus a zero-test "hollow pass" rejection); when no
+  config is present it emits a loud `TEST-GATE-DEGRADED` warning to stderr and an entry in
+  `HOOK-FAILURES.jsonl` (and becomes a hard block under strict mode) (C3).
 - **`ceo-commit.ps1`** PowerShell commit wrapper alongside `ceo-commit.sh` for the Windows-primary
   repo (C16).
 - **Opt-in strict / fail-closed mode** (`STRICT_MODE` sentinel) plus a `HOOK-FAILURES.jsonl` audit

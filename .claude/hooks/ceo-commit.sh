@@ -5,7 +5,8 @@
 #
 # Enforces:
 #   - At least one explicit pathspec is required (no -A / no bare "." allowed)
-#   - Refuses any pathspec that is literally "." or "-A" or starts with "--"
+#   - Refuses the full sweep set guard_git_commit.py blocks: . ./ -A --all -u
+#     --update :/ : * and any pathspec-magic (leading ":") or flag-like ("--") arg
 #   - Stages ONLY the listed paths (git add <pathspec>...)
 #   - Commits with the provided message
 #
@@ -33,12 +34,20 @@ shift  # remaining args are pathspecs
 
 PATHSPECS=("$@")
 
-# Reject forbidden pathspecs
+# Reject forbidden pathspecs. The literal set mirrors guard_git_commit.py's sweep
+# selectors so the wrapper and the raw-command guard enforce the SAME discipline.
 for ps in "${PATHSPECS[@]}"; do
-    if [[ "$ps" == "." || "$ps" == "-A" || "$ps" == "--all" ]]; then
-        echo "ceo-commit.sh: BLOCKED — pathspec '${ps}' is forbidden. Use explicit file paths." >&2
-        echo "The single-committer rule (Rule 1 / INDEX-RACE incident) requires pathspec-scoped" >&2
-        echo "commits. Never use -A / . — list the actual files being committed." >&2
+    case "$ps" in
+        "."|"./"|"-A"|"--all"|"-u"|"--update"|"*"|":"|":/")
+            echo "ceo-commit.sh: BLOCKED — pathspec '${ps}' is a forbidden sweep selector." >&2
+            echo "The single-committer rule (Rule 1 / INDEX-RACE incident) requires pathspec-scoped" >&2
+            echo "commits. Never use -A / . / ./ / :/ / -u / * — list the actual files being committed." >&2
+            exit 1
+            ;;
+    esac
+    # Pathspec magic (leading ':') — e.g. ':/', ':!', ':(top)' — can re-root staging.
+    if [[ "$ps" == :* ]]; then
+        echo "ceo-commit.sh: BLOCKED — pathspec-magic argument '${ps}' rejected. Only plain file paths allowed." >&2
         exit 1
     fi
     if [[ "$ps" == --* && "$ps" != "--" ]]; then

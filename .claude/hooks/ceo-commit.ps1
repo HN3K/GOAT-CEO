@@ -19,7 +19,8 @@
 
     Enforces:
       - At least one explicit pathspec is required (no -A / no bare "." allowed)
-      - Refuses any pathspec that is literally "." or "-A" or "--all" or starts with "--"
+      - Refuses the full sweep set guard_git_commit.py blocks: . ./ -A --all -u
+        --update :/ : * and any pathspec-magic (leading ":") or flag-like ("--") arg
       - Stages ONLY the listed paths (git add -- <pathspec>...)
       - Commits with the provided message
 
@@ -44,12 +45,19 @@ if ($null -eq $Args -or $Args.Count -lt 2) {
 $Message = $Args[0]
 $PathSpecs = $Args[1..($Args.Count - 1)]
 
-# Reject forbidden pathspecs
+# Reject forbidden pathspecs. The literal set mirrors guard_git_commit.py's sweep
+# selectors so the wrapper and the raw-command guard enforce the SAME discipline.
+$Forbidden = @('.', './', '-A', '--all', '-u', '--update', '*', ':', ':/')
 foreach ($ps in $PathSpecs) {
-    if ($ps -eq "." -or $ps -eq "-A" -or $ps -eq "--all") {
-        [Console]::Error.WriteLine("ceo-commit.ps1: BLOCKED - pathspec '$ps' is forbidden. Use explicit file paths.")
+    if ($Forbidden -contains $ps) {
+        [Console]::Error.WriteLine("ceo-commit.ps1: BLOCKED - pathspec '$ps' is a forbidden sweep selector.")
         [Console]::Error.WriteLine("The single-committer rule (Rule 1 / INDEX-RACE incident) requires pathspec-scoped")
-        [Console]::Error.WriteLine("commits. Never use -A / . - list the actual files being committed.")
+        [Console]::Error.WriteLine("commits. Never use -A / . / ./ / :/ / -u / * - list the actual files being committed.")
+        exit 1
+    }
+    # Pathspec magic (leading ':') - e.g. ':/', ':!', ':(top)' - can re-root staging.
+    if ($ps.StartsWith(':')) {
+        [Console]::Error.WriteLine("ceo-commit.ps1: BLOCKED - pathspec-magic argument '$ps' rejected. Only plain file paths allowed.")
         exit 1
     }
     if ($ps -like "--*" -and $ps -ne "--") {

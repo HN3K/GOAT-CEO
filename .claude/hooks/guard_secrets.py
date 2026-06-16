@@ -144,7 +144,18 @@ def main() -> int:
         if not target:
             return 0  # nothing to evaluate — allow
 
-        # (1) secret-bearing path
+        # Anchor a RELATIVE target to the payload cwd (the agent's repo/worktree) before
+        # any path-based check — falling back to the hook process cwd only if the payload
+        # omits cwd. The read-only dirs are anchored to the project root, so resolving a
+        # relative target against the process cwd would compare inconsistent bases and a
+        # write under a read-only reference path could slip the containment check.
+        cwd = data.get("cwd", "") or ""
+        resolved_target = target
+        if not os.path.isabs(target):
+            base = cwd or os.getcwd()
+            resolved_target = os.path.join(base, target)
+
+        # (1) secret-bearing path (basename/glob based — independent of cwd resolution)
         if _matches_secret(target):
             sys.stderr.write(
                 "SECRETS GUARD: refusing Write/Edit to '{}' — it matches a secret-bearing "
@@ -155,9 +166,9 @@ def main() -> int:
             )
             return 2
 
-        # (2) read-only reference path (C17, optional)
+        # (2) read-only reference path (C17, optional) — use the cwd-anchored target
         root = _project_root()
-        matched = _under_readonly(target, _readonly_paths(root))
+        matched = _under_readonly(resolved_target, _readonly_paths(root))
         if matched:
             sys.stderr.write(
                 "SECRETS GUARD: refusing Write/Edit to '{}' — it resolves under a read-only "

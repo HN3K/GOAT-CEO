@@ -116,16 +116,26 @@ def _recorded_start_head(agent_type: str, session_id: str) -> str | None:
     return None
 
 
-def _implementer_result_evidence(start_head: str | None) -> bool:
-    """True if an IMPLEMENTER-RESULT*.json proves work.
+def _implementer_result_evidence(
+    start_head: str | None, session_id: str, cur_head: str | None
+) -> bool:
+    """True if a CURRENT-RUN IMPLEMENTER-RESULT*.json proves work.
 
     Schema (written by the implementer / CEO):
-        {batchId, branch, startHead, endHead, changedFiles[], testsRun[],
+        {sessionId, batchId, branch, startHead, endHead, changedFiles[], testsRun[],
          deviationsFromPlan[]}
-    Evidence = non-empty file whose endHead differs from startHead (when known)
-    AND whose changedFiles is non-empty.
+    Evidence = non-empty file whose endHead differs from the baseline AND whose
+    changedFiles is non-empty AND which is bound to THIS run.
+
+    CURRENT-RUN BINDING (anti-stale): a leftover result file from a prior batch/session
+    must NOT clear a later no-op implementer. A file counts only if EITHER:
+      - its `sessionId` matches the payload session_id, OR
+      - its `endHead` matches the CURRENT worktree HEAD (the change it claims is in
+        this tree right now).
+    A stale file has a different sessionId and an endHead from an old commit, so it
+    binds to neither and is ignored.
     """
-    for path in _glob.glob(os.path.join(WORKSPACE, "IMPLEMENTER-RESULT*.json")):
+    for path in sorted(_glob.glob(os.path.join(WORKSPACE, "IMPLEMENTER-RESULT*.json"))):
         try:
             if os.path.getsize(path) == 0:
                 continue
@@ -145,6 +155,13 @@ def _implementer_result_evidence(start_head: str | None) -> bool:
         baseline = start_head or rec_start
         if baseline and end_head == baseline:
             continue
+        # Current-run binding — reject stale files from prior batches/sessions.
+        rec_sid = str(obj.get("sessionId", "") or "").strip()
+        bound = (session_id and rec_sid and rec_sid == session_id) or (
+            cur_head and end_head == cur_head
+        )
+        if not bound:
+            continue
         return True
     return False
 
@@ -154,29 +171,35 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
 
     PASS (allow) if ANY of:
       (a) current worktree HEAD != recorded startHead;
-      (b) an IMPLEMENTER-RESULT*.json with endHead != startHead and non-empty
-          changedFiles;
-      (c) `git status --porcelain` shows uncommitted changes.
-    BLOCK only if startHead is KNOWN and HEAD == startHead and no result evidence
-    and no working-tree changes (provably no work). If startHead is UNKNOWN, WARN
+      (b) `git status --porcelain` shows uncommitted changes;
+      (c) a CURRENT-RUN IMPLEMENTER-RESULT*.json with endHead != startHead and
+          non-empty changedFiles (bound to this session/HEAD — see
+          _implementer_result_evidence).
+    BLOCK only if startHead is KNOWN and HEAD == startHead and no working-tree changes
+    and no current-run result evidence (provably no work). If startHead is UNKNOWN, WARN
     and ALLOW (fail-open — never block on a missing baseline).
 
-    Reads HEAD from the PAYLOAD cwd (the implementer's worktree), never REPO_ROOT.
+    The fresh, worktree-local signals (a) and (b) are checked BEFORE the result-file
+    evidence (c): a stale artifact can never fake a moved HEAD or a dirty tree, so the
+    unspoofable signals win first and (c) only ever has to clear a genuinely no-op tree
+    with a current-run result file. Reads HEAD from the PAYLOAD cwd (the implementer's
+    worktree), never REPO_ROOT.
     """
     start_head = _recorded_start_head(agent_type, session_id)
 
-    # (b) structured result evidence — usable even without a baseline.
-    if _implementer_result_evidence(start_head):
-        return True, ""
-
     if not cwd:
+        # No worktree to inspect — a current-run-bound result file may still prove work
+        # (sessionId binding does not need cwd/HEAD); otherwise fail open.
+        if _implementer_result_evidence(start_head, session_id, None):
+            return True, ""
         sys.stderr.write(
             "WARNING (check_artifacts): no payload cwd for team-implementer; "
             "cannot verify worktree HEAD. Allowing (fail-open).\n"
         )
         return True, ""
 
-    # (a) HEAD moved past the recorded baseline.
+    # Read the current worktree HEAD up front (used by both the HEAD-moved check and
+    # the result-file current-run binding).
     cur_head = None
     try:
         r = _git(cwd, "rev-parse", "HEAD")
@@ -185,15 +208,28 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
     except Exception:
         cur_head = None
 
+    # (a) HEAD moved past the recorded baseline — strongest, freshest, unspoofable signal.
+    if start_head is not None and cur_head and cur_head != start_head:
+        return True, ""
+
+    # (b) uncommitted working-tree changes — also fresh and worktree-local.
+    try:
+        s = _git(cwd, "status", "--porcelain")
+        if s.returncode == 0 and (s.stdout or "").strip():
+            return True, ""
+    except Exception:
+        pass  # if status fails we fall through to the remaining checks
+
+    # (c) structured result evidence — only if bound to THIS run (anti-stale).
+    if _implementer_result_evidence(start_head, session_id, cur_head):
+        return True, ""
+
     if start_head is None:
         sys.stderr.write(
             "WARNING (check_artifacts): no recorded startHead for team-implementer "
             "(SubagentStart baseline missing). Allowing (fail-open) — cannot prove "
             "absence of work without a baseline.\n"
         )
-        return True, ""
-
-    if cur_head and cur_head != start_head:
         return True, ""
 
     if cur_head is None:
@@ -206,22 +242,15 @@ def _has_implementer_artifact(cwd: str, agent_type: str, session_id: str) -> tup
         )
         return True, ""
 
-    # (c) uncommitted working-tree changes.
-    try:
-        s = _git(cwd, "status", "--porcelain")
-        if s.returncode == 0 and (s.stdout or "").strip():
-            return True, ""
-    except Exception:
-        pass  # if status fails we fall through to the block path below
-
     return (
         False,
         "team-implementer produced NO provable work: worktree HEAD is unchanged "
-        "from its start baseline ({}), no IMPLEMENTER-RESULT*.json with a real "
-        "endHead+changedFiles exists, and the working tree is clean. Make your "
-        "code changes (commit on your worktree branch or write "
-        "IMPLEMENTER-RESULT.<batchId>.json with endHead + changedFiles), then "
-        "report to the CEO and END YOUR TURN.".format((start_head or "")[:12]),
+        "from its start baseline ({}), the working tree is clean, and no CURRENT-RUN "
+        "IMPLEMENTER-RESULT*.json (one whose sessionId matches this run or whose "
+        "endHead matches the current HEAD) exists. Make your code changes (commit on "
+        "your worktree branch or write IMPLEMENTER-RESULT.<batchId>.json with "
+        "sessionId + endHead + changedFiles), then report to the CEO and END YOUR "
+        "TURN.".format((start_head or "")[:12]),
     )
 
 
