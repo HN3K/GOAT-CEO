@@ -341,8 +341,22 @@ print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components 
   blocks (parses only the reviewer's own assistant output, skips placeholders/prompt-echo, requires a substantive
   quote, fail-open). Tested across valid / fabricated / file-not-found / placeholder / prompt-only / trivial /
   exempt / whitespace cases. Judge/critic/Reviewer-C exempt.
-- **v2 still deferred:** the native PostToolUse self-heal gate (needs a per-file heal-cap wrapper to fit
-  `maxTurns:30`); the `codify --draft` loop at session close; cross-repo conventions sharing via `rubricConventions`.
+- **v2 self-heal gate — BUILT (2026-06-15).** `.claude/hooks/rubric_heal_gate.py` wraps `rubric check` with a
+  per-file heal CAP (default 2): a blocking violation feeds back to Claude to self-heal in real time, but after
+  the cap it DEGRADES to advisory (logs to `RUBRIC-DEGRADED.md` for the CEO's `RUBRIC.GATE` to catch) instead of
+  thrashing the implementer past `maxTurns:30` (the R-A risk). TARGET-REPO opt-in: copied into a repo's
+  `.claude/hooks/` and wired as a PostToolUse `Edit|Write` hook for repos that want in-loop heal; the default
+  flow stays the CEO-run `RUBRIC.GATE` at integration. Tested: heal×2 → degrade; clean clears the counter;
+  non-code exempt; fail-open. Has a `RUBRIC_HEAL_TEST_FORCE` test seam.
+- **v2 codify loop — BUILT (doctrine).** At session close, for RUBRIC-AVAILABLE repos the CEO MAY run
+  `rubric codify --draft --write` over the changed files to propose KB standards from recurring verified findings
+  (lands in `.rubric/proposals/` for HUMAN approval — never auto-merged) and surfaces the proposals in the session
+  summary. Opt-in (uses rubric's `claude -p`); advisory. Wired in `goat-ceo.md` Phase 6.
+- **v2 cross-repo conventions — BUILT (doctrine).** Optional `rubricConventions` registry field lets several `rw`
+  repos in a group point at ONE shared conventions KB (rubric's conventions plane is portable); the rubric
+  commands pass `--kb <shared-path>`. Wired in the `goat-ceo.md §1.1` schema + relationship-mapping intake.
+- **All §I v2 items are now built.** Remaining is operational hardening only: soak rubric, author real per-repo KBs,
+  and (optional) a TS/JS reuse-index extractor upstream in rubric for full Node coverage.
 
 ### §I.5 — Caveats & top risks
 

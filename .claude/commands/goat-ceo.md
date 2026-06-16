@@ -150,6 +150,7 @@ Display validation summary. Write `repo-registry.json`:
       "tooling": true,
       "rubric": true,
       "rubricStatus": "RUBRIC-AVAILABLE",
+      "rubricConventions": null,
       "lastSession": "ISO timestamp",
       "groups": []
     },
@@ -171,6 +172,8 @@ Display validation summary. Write `repo-registry.json`:
 ```
 
 `access` field values: `"rw"` (read-write target — normal pipeline) | `"ro-reference"` (read-only reference — agents may read for ground-truth, never write).
+
+`rubricConventions` (optional): a path/id to a SHARED rubric conventions KB. rubric's conventions plane is portable across repos, so several `rw` repos in a group can point at ONE conventions KB (set the same `rubricConventions` for each, and pass `--kb <that-path>` to the rubric commands). Leave `null` to use each repo's own `.rubric/kb`. Offer a shared conventions KB during relationship mapping (Step 1.3) when repos in a group should enforce the same standards.
 
 **STOP HERE.** Wait for user confirmation.
 
@@ -208,6 +211,8 @@ For any repo with missing components, present:
 > "[Repo] has no rubric standards system. Options:
 > A) Bootstrap — run `rubric init --no-claude --repo <path>` (scaffolds `.rubric/` + git pre-commit + the reuse index; does NOT install rubric's own Claude Code hooks/skill — GOAT-CEO drives rubric via its CLI). NOTE: the seed KB is TS-flavored; the repo should supply its own conventions/exemplars for real value.
 > B) Skip (records RUBRIC-UNAVAILABLE; no grounding/gate for this repo)"
+
+> **Optional real-time self-heal (advanced):** for a RUBRIC-AVAILABLE repo whose implementers should self-correct standards violations DURING their turn, copy `.claude/hooks/rubric_heal_gate.py` from GOAT-CEO into the target repo's `.claude/hooks/` and wire it as a PostToolUse `Edit|Write` hook. It is CAPPED (heals ≤2 cycles/file, then degrades to advisory + logs to `RUBRIC-DEGRADED.md`) so it cannot thrash an implementer past `maxTurns`. Default flow does NOT install this — the CEO-run `RUBRIC.GATE` at integration is the baseline; this is an opt-in upgrade.
 
 **STOP HERE** for each repo needing setup. Wait for user response.
 
@@ -423,6 +428,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
 **Phase 6 — Verify + Finalize (CEO-direct):**
 - CEO runs the BROAD test suite independently against a frozen baseline (Doctrine #2 — never trust an implementer's "tests pass"; mock-passing units failed on real runs 7+ times)
 - **When RUBRIC-AVAILABLE:** CEO runs `rubric measure <src> --baseline agent-workspace/RUBRIC-BASE.json --repo <path> --kb .rubric/kb` and reports the gate-pass / complexity / SLOC deltas in the session summary. Reporting only — runs after the independent broad-suite run and never blocks completion. (If no baseline exists, `--save` it and note "baseline established, no delta this run".)
+- **Codify loop (RUBRIC-AVAILABLE, optional, session close):** CEO MAY run `rubric codify --draft --write <changed-src> --repo <path> --kb .rubric/kb` to propose new/tightened KB standards from recurring verified findings → `.rubric/proposals/`. These require HUMAN approval and are NEVER auto-merged into the KB. Surface the proposal titles in the session summary so the operator can review them. Uses rubric's LLM path (`claude -p`) — opt-in; advisory; never gates completion. Also surface any `agent-workspace/RUBRIC-DEGRADED.md` entries (violations the optional self-heal gate could not auto-fix within the cap) for the operator.
 - CEO confirms ALL gate sentinels present: `PLAN.GATE`, `RESEARCH.GATE`, `IMPLEMENT.GATE`, `INDEX.GATE`, `REVIEW.GATE` (and `RUBRIC.GATE` when the repo is RUBRIC-AVAILABLE — added to `EXPECTED-GATES.txt` only for such waves, so the Stop hook never blocks on an absent optional gate)
 - CEO confirms `ESCALATE_REQUIRED` absent
 - `Stop` hook `check_pipeline_complete.py` blocks the CEO's turn end if any `*.GATE` is missing or `ESCALATE_REQUIRED` is set
