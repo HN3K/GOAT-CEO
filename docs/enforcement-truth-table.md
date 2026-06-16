@@ -52,7 +52,11 @@ table disagree, **this table wins** — it is sourced directly from the hooks an
    becomes a hard block (`check_test_gate.py` is the only hook that consults `strict_mode()`). It also
    logs every fail-open/degraded event to `HOOK-FAILURES.jsonl`. STOP (`check_stop_file.py`) and
    secret-write (`guard_secrets.py`) are **already unconditional blocks** and do **not** consult strict
-   mode. The `_strict.py` helper is shared so other degraded-allow paths can opt in later.
+   mode. The `_strict.py` helper is shared so other degraded-allow paths can opt in later. All optional
+   capabilities (rubric, research KB, strict mode, …) are surfaced and toggled through the
+   **`/goat-ceo:features`** command: defaults in the committed `.claude/goat-features.json` (all OFF),
+   overlaid by the **gitignored** `.claude/goat-features.local.json` (personal), then per-repo flags in
+   `repo-registry.json`, then session sentinels in `agent-workspace/`. Everything defaults OFF.
 
 ## The table
 
@@ -79,8 +83,9 @@ table disagree, **this table wins** — it is sourced directly from the hooks an
 | **Resume-anchor self-heal** — regenerate machine facts before compaction; re-inject after | **Advisory** (never blocks) | `check_precompact.py` (PreCompact, never blocks) + `inject_handoff_context.py` (SessionStart) | Yes (PreCompact intentionally never blocks — blocking auto-compaction would deadlock) | No | Not an enforcement gate — a survival mechanism. Preserves the **machine-verifiable floor** (git state + sentinels + machine-refresh block); injected prose is capped/truncated and can decay, which is why resume re-grounds from facts. |
 | **Task-naming convention** | **Advisory** (warn-only) | `check_task_naming.py` (TaskCreated) — warns, never blocks | Yes | No | Cosmetic; off-convention titles warn only. |
 | **Denial audit log** | **Advisory** (logging) | `log_denial.py` (PermissionDenied) — appends to an audit log | Yes | No | Observability, not enforcement. |
-| **`rubric` self-heal cap** — capped standards self-heal in a target repo | **Gate** (opt-in, target-repo) | `rubric_heal_gate.py` (PostToolUse `Edit\|Write`) — **ships but not wired by default** | Yes | No | Inert unless copied into a target repo and wired. Heals ≤2 cycles/file then degrades to advisory + logs `RUBRIC-DEGRADED.md`. |
-| **`RUBRIC.GATE`** — blocking rubric violation blocks integration (RUBRIC-AVAILABLE repos) | **Gate** (deterministic CLI, opt-in per repo) | CEO runs `rubric check --changed` (exit 1 on violation) at Phase-3 integration; writes the gate only on exit 0 | The CLI is deterministic; the CEO's choice to run it is convention | No | Only present when a repo is RUBRIC-AVAILABLE and the gate is added to `EXPECTED-GATES.txt` for that wave; otherwise absent (and must be, or the Stop hook blocks forever on a missing optional gate). |
+| **Capability audit logs** — record every rubric enforcement + research action | **Advisory** (logging) | `scripts/log_capability.py` (CEO / `/goat-ceo:features` runs → `logs/rubric-enforcement.jsonl`, `logs/research.jsonl`) + `rubric_heal_gate.py` `_log_enforcement` (→ `logs/rubric-enforcement.jsonl`) | Yes (append failures swallowed) | No | Observability, not a gate. Append-only JSONL under `logs/` (gitignored); written only when the optional rubric/research capability actually runs — absent for a vanilla session. `rubric-enforcement.jsonl` records every block/heal/degrade rubric caught; `research.jsonl` every capture/run/benchmark. View via `/goat-ceo:features` → rubric/research → `log`. |
+| **`rubric` self-heal cap** — capped standards self-heal in a target repo | **Gate** (opt-in, target-repo) | `rubric_heal_gate.py` (PostToolUse `Edit\|Write`) — **ships but not wired by default** | Yes | No | Inert unless copied into a target repo and wired. Heals ≤2 cycles/file then degrades to advisory + logs `RUBRIC-DEGRADED.md`; each block/degrade is also recorded to `logs/rubric-enforcement.jsonl`. |
+| **`RUBRIC.GATE`** — blocking rubric violation blocks integration (RUBRIC-AVAILABLE repos) | **Gate** (deterministic CLI, opt-in per repo) | CEO runs `rubric check --changed` (exit 1 on violation) at Phase-3 integration; writes the gate only on exit 0 | The CLI is deterministic; the CEO's choice to run it is convention | No | Only present when a repo is RUBRIC-AVAILABLE and the gate is added to `EXPECTED-GATES.txt` for that wave; otherwise absent (and must be, or the Stop hook blocks forever on a missing optional gate). A deterministic rule only blocks when its analyzer (`ast-grep`/`ruff`/a `tools.json` linter) is on PATH — a missing analyzer silently doesn't fire. rubric's CLI output needs `PYTHONUTF8=1` (set in `settings.json`) on Windows or it can crash on non-ASCII. Enabled/seen via `/goat-ceo:features`; blocking findings logged to `logs/rubric-enforcement.jsonl`. |
 
 ## Bottom line
 

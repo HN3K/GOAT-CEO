@@ -148,6 +148,13 @@ questions:
 | **Research KB** | external — *"why / what does prior art say"* | vendored `tools/research-system/`; shared `research-kb/` | `RESEARCH-KB-AVAILABLE` |
 | **Worktree fan-out** | throughput — *"do it faster"* | native `isolation: worktree` + `IMPLEMENTATION-MANIFEST.json` | parallel batches |
 
+The capability planes (and the other optional toggles — strict mode, unattended) all **default OFF**
+and are surfaced/toggled through the **[`/goat-ceo:features`](.claude/commands/goat-ceo/features.md)**
+command. Its precedence, most-specific-wins: built-in OFF → committed shipped baseline
+(`.claude/goat-features.json`, all off) → your **gitignored** personal defaults
+(`.claude/goat-features.local.json`) → per-repo override (`repo-registry.json`) → session sentinel.
+Your personal defaults and per-repo activation are local-only and never published.
+
 ### Codebase-Index — internal code
 
 A hand-curated, layered Markdown map of a repo's own code (`MASTER-INDEX.md` → section `INDEX.md`),
@@ -189,8 +196,16 @@ standards/reuse axis the correctness-focused pipeline doesn't, through its **det
 rubric also lent GOAT-CEO its mechanical **span-check** — confirming a reviewer's cited `file:line`
 actually exists — which is grafted onto the correctness reviewers (A/B) as a `SubagentStop` hook,
 catching fabricated citations a read-count audit can't. *Full value on Python; partial on Node
-(gate + conventions, but no symbol-level reuse index yet); the seed KB is a template — a repo
-supplies its own conventions for real value.*
+(gate + conventions, but no symbol-level reuse index yet).*
+
+A few specifics worth knowing: `rubric init` scaffolds `.rubric/` (linter wiring + reuse index) but
+creates **no conventions KB** — author it, or run **`/goat-ceo:features → rubric seed`**, which
+discovers candidate standards from your own code *and* from internet best-practice research and lets
+you pick which to adopt (each with a rationale). A deterministic rule only **blocks** when its analyzer
+(`ast-grep`/`ruff`/a configured linter) is on PATH; a missing analyzer means it silently doesn't fire.
+On Windows, `settings.json` sets `PYTHONUTF8=1` so rubric's non-ASCII output doesn't crash the console.
+Every time rubric **enforces** a standard (a block/heal/degrade) it's recorded to the gitignored
+`logs/rubric-enforcement.jsonl` — view it via `/goat-ceo:features → rubric → log`.
 
 ### Research KB — verifiable external research
 
@@ -211,14 +226,17 @@ re-queryable corpus where every claim resolves to a verbatim quote in a stored s
   (`supported`/`overreach`/`unsupported`); the synthesis contains *only* supported claims. A
   subject with `claims.jsonl` is **verified**; one with only `sources/` is **captured-but-unverified**
   (raw material until verified). Only `verdict: supported` claims may back a finding.
-- **Feeds rubric.** Verified, *sourced* coding-standards distill into rubric rules/exemplars (via
-  `codify`, human-approved) — making conventions evidence-backed ("we enforce X because [source]").
+- **Feeds rubric.** Verified, *sourced* coding-standards can seed rubric rules/exemplars via
+  `/goat-ceo:features → rubric seed` (operator-selected, human-approved) — making conventions
+  evidence-backed ("we enforce X because [source]"). (rubric's own `codify` is a separate path that
+  proposes rules from recurring *code-review* drift, not from research.)
 
 **Honesty boundary:** it certifies **claim-level traceability to a stored source (faithfulness +
 provenance), not truth** — a claim faithfully grounded in a *wrong* source still passes; source
 quality stays a human judgment. The corpus is shared cross-repo (gitignored, grows per session);
 its LLM stages run on your Claude **subscription** (~$1–3 credit per verified question), so they're
-opt-in and gated to subjects "worth persisting."
+opt-in and gated to subjects "worth persisting." Every capture/run/benchmark is recorded to the
+gitignored `logs/research.jsonl` — view it via `/goat-ceo:features → research → log`.
 
 ---
 
@@ -395,8 +413,11 @@ GOAT-CEO is allowed to build on; anything not in it must be cleared before being
 pipeline runs unchanged)
 
 - **rubric** (vendored, self-contained): `pip install -e "tools/rubric[gate,retrieval]"`, then
-  `rubric init --no-claude` in a target repo. Optional: the `ast-grep` binary (multi-language
-  structural rules); `radon` (`[...,metrics]`) for `measure`. See
+  `rubric init --no-claude` in a target repo to scaffold `.rubric/` (linter wiring + reuse index —
+  **not** a conventions KB; seed that via `/goat-ceo:features → rubric seed`). A deterministic rule
+  needs its analyzer on PATH to gate: `ast-grep` (multi-language structural rules), `ruff` (Python),
+  or your configured linter; `radon` (`[...,metrics]`) enables `measure`. On Windows the wired
+  `PYTHONUTF8=1` keeps rubric's output from crashing the console. See
   [`tools/rubric/VENDORED.md`](tools/rubric/VENDORED.md).
 - **Research System** (vendored engine, self-contained):
   `pip install -e "tools/research-system[capture,retrieval,llm]"` (**Python ≥ 3.11**). Driven via
@@ -413,7 +434,7 @@ guarantee.
 | Dimension | Status |
 |---|---|
 | Claude Code version | Tested against the agent-teams experimental builds current at time of writing; behavior tracks the installed version. Run `claude --version` and confirm the custom hook events fire (the CEO live-fire-tests this at session start). |
-| OS | **Windows-primary** (developed/run on Windows 11). The commit wrapper ships as `ceo-commit.sh` (Git Bash) and `.ps1` outer loops (`scripts/autonomous-loop.ps1`) for PowerShell. Hooks are OS-agnostic Python; macOS/Linux are expected to work but are less soaked. |
+| OS | **Windows-primary** (developed/run on Windows 11). The commit wrapper ships as `ceo-commit.sh` (Git Bash) and `.ps1` outer loops (`scripts/autonomous-loop.ps1`) for PowerShell. Hooks are OS-agnostic Python; `settings.json` sets `PYTHONUTF8=1` so the vendored tools' non-ASCII CLI output is UTF-8-safe on the Windows console. macOS/Linux are expected to work but are less soaked. |
 | Python | **3.11+** (the vendored Research System requires ≥ 3.11; hooks themselves run on ≥ 3.8). Must be reachable as `python` on PATH or every fail-open hook silently no-ops. |
 | Agent-teams flag | **Required** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (already set in `.claude/settings.json`). |
 | Hooks confirmed | All hooks are fail-open and validated to exit 0 on empty/garbage input; the CEO runs a live-fire enforcement self-check at session start. Some gates are availability-gated on experimental events (`PostToolBatch`, `TaskCompleted`, etc.) — they degrade to advisory if the build doesn't emit them. |
@@ -434,11 +455,14 @@ gate; the helper is shared so other degraded-allow paths can opt in later.
 
 ```
 /goat-ceo                          # multi-repo orchestration (interactive by default; opt-in unattended)
+/goat-ceo:features                 # interactive menu to see/toggle optional features + run feature actions
+                                   #   (rubric status/seed, research run/status, view the audit logs)
 /goat-team:goat <task>             # single-repo full 6-phase pipeline
 /goat-team:goat-plan <task>        # plan + research only, no code changes
 /goat-team:goat-review             # dual-reviewer audit of existing changes
 /goat-team:index-check             # audit/update the Codebase-Index without a pipeline
 /goat-team:set-models              # change GOAT agent model assignments
+/goat-doctor                       # validate the enforcement layer (interpreter, hook wiring, live gates)
 ```
 
 ---
@@ -449,18 +473,19 @@ gate; the helper is shared so other degraded-allow paths can opt in later.
 .claude/
   commands/
     goat-ceo.md                 # multi-repo CEO entry point
-    goat-ceo/                   # doctrine: rules.md, protocols.md, templates.md, roster.md,
-                                #   anti-drift.md, unattended-mode.md + pipeline-kernel.reference.js
+    goat-ceo/                   # doctrine: rules.md, protocols.md, templates.md, roster.md, anti-drift.md,
+                                #   unattended-mode.md; features.md (/goat-ceo:features) + pipeline-kernel.reference.js
     goat-team/                  # single-repo pipeline skill + role scripts
   agents/                       # 8 custom subagent definitions (overseer, architect, ...)
   hooks/                        # the fail-open enforcement layer (Python)
-  settings.json                 # permission deny rules + hook wiring
+  settings.json                 # permission deny rules + hook wiring (incl. PYTHONUTF8=1)
+  goat-features.json            # optional-feature defaults — committed neutral baseline (all OFF)
 specs/                          # self-contained bootstrap specs (index system, tooling, GOAT)
 tools/rubric/                   # vendored rubric standards tool — pip install -e to enable
 tools/research-system/          # vendored research engine (corpora excluded) — pip install -e to enable
-scripts/autonomous-loop.ps1     # optional outer loop (restart-on-crash, unattended)
+scripts/                        # autonomous-loop.ps1 (outer loop) + log_capability.py (capability-audit logger)
 GOAT-CEO-REWORK-DESIGN.md        # the design of record (§0 primitive ledger … §J)
-agent-workspace/  logs/  research-kb/  repo-registry.json   # per-session / local state (gitignored)
+agent-workspace/  logs/  research-kb/  repo-registry.json  .claude/goat-features.local.json   # local state (gitignored)
 ```
 
 The **design of record** is [`GOAT-CEO-REWORK-DESIGN.md`](GOAT-CEO-REWORK-DESIGN.md): §0 the
