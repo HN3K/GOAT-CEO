@@ -218,7 +218,7 @@ Independently, record the rubric status in `repo-registry.json` under `"rubricSt
 - **RUBRIC-UNAVAILABLE** — no `.rubric/` KB or no CLI. Standards grounding/gate are skipped. rubric is OPTIONAL — its absence never blocks the pipeline.
 
 Independently, record the research-KB status under `"researchKbStatus"` (SHARED across all `rw` repos; set each repo's `"researchKbRoot"` to `<GOAT-CEO>/research-kb`):
-- **RESEARCH-KB-AVAILABLE** — the Research System engine imports and `research-kb/` is present/creatable. The technical researcher (templates §7) CHECKS the KB before commissioning online research (reuse-before-research) and captures persist-worthy subjects into it.
+- **RESEARCH-KB-AVAILABLE** — the Research System engine imports and `research-kb/` is present/creatable. The technical researcher (templates §7) CHECKS the KB before commissioning online research (reuse-before-research) and captures persist-worthy subjects into it. Each capture/run/benchmark is recorded to the gitignored `logs/research.jsonl` audit trail via `python scripts/log_capability.py research --action <capture|run|benchmark> --subject <slug> [--question … --verdicts …]` (viewable with `/goat-ceo:features` → research → log).
 - **RESEARCH-KB-UNAVAILABLE** — engine missing or deps not installed. Researchers use WebSearch / the `deep-research` skill as today (ephemeral). OPTIONAL — never blocks the pipeline.
 
 > **Defaults & the features command.** Each optional capability defaults OFF. The committed
@@ -439,7 +439,7 @@ The CEO drives the same 6 phases via TaskCreate + SendMessage. This path is full
   2. For each PASS branch, CEO merges in a fixed order, running the broad test suite between merges: `git merge worktree-{name}`, then test. Abort and escalate on break.
   3. On conflict: CEO cherry-picks individual commits or spawns a manual-merge subagent
   4. After all merges land on main, CEO writes `agent-workspace/IMPLEMENT.GATE` via `.claude/hooks/ceo-commit.sh` (pathspec wrapper — never `git add -A`/`.`)
-  5. **RUBRIC.GATE (only when this repo is RUBRIC-AVAILABLE):** CEO runs the deterministic standards gate on the merged changes — `rubric check --changed --repo <path> --kb .rubric/kb` (NO `--verify`, NO LLM — free). Exit 0 → CEO writes `agent-workspace/RUBRIC.GATE`. Exit 1 (blocking violation) → do NOT write the gate; spawn a targeted implementer to fix it, re-merge, re-check. A rubric blocking violation is a deterministic FACT (like a failing test), not an advisory opinion. When RUBRIC-UNAVAILABLE, skip this step and do NOT add `RUBRIC.GATE` to `EXPECTED-GATES.txt`.
+  5. **RUBRIC.GATE (only when this repo is RUBRIC-AVAILABLE):** CEO runs the deterministic standards gate on the merged changes — `rubric check --changed --repo <path> --kb .rubric/kb` (NO `--verify`, NO LLM — free). Exit 0 → CEO writes `agent-workspace/RUBRIC.GATE`. Exit 1 (blocking violation) → do NOT write the gate; **record what rubric caught** — `python scripts/log_capability.py rubric --source gate --action blocked --repo <path> --rules <ids from the [ast-grep <id>]/[ruff <id>] lines> --files <changed>` (appends to the gitignored `logs/rubric-enforcement.jsonl` audit trail) — then spawn a targeted implementer to fix it, re-merge, re-check. A rubric blocking violation is a deterministic FACT (like a failing test), not an advisory opinion. When RUBRIC-UNAVAILABLE, skip this step and do NOT add `RUBRIC.GATE` to `EXPECTED-GATES.txt`.
   6. CEO removes merged worktrees: `git worktree remove` (or let `cleanupPeriodDays: 7` sweep)
 
 **Phase 4 — Index:**

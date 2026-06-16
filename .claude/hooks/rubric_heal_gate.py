@@ -21,6 +21,7 @@ upgrade for repos that want in-loop correction with the thrash-guard.
 Design contract: FAIL-OPEN. Needs `rubric` on PATH + a `.rubric/kb`; absent -> allow. stdlib only.
 exit 0 = allow; exit 2 = self-heal (stderr shown to the model).
 """
+import datetime
 import json
 import os
 import re
@@ -34,6 +35,30 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 WORKSPACE = os.path.join(REPO_ROOT, "agent-workspace")
 COUNTER_PATH = os.path.join(WORKSPACE, "RUBRIC-HEAL.json")
 DEGRADED_PATH = os.path.join(WORKSPACE, "RUBRIC-DEGRADED.md")
+
+# Enforcement audit log (logs/ is gitignored — local trail, not published). Self-contained
+# inline append so this hook stays a single portable file when copied into a target repo;
+# it mirrors scripts/log_capability.py's schema so both writers share one log format.
+ENFORCEMENT_LOG = os.path.join(REPO_ROOT, "logs", "rubric-enforcement.jsonl")
+_RULE_RE = re.compile(r"\[(?:ast-grep|ruff|rubric)\s+([^\]]+)\]")
+
+
+def _log_enforcement(file_path, action, detail):
+    """Record that rubric ENFORCED a standard (caught a blocking violation). Fail-open."""
+    try:
+        rec = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "log": "rubric-enforcement", "source": "heal-gate", "action": action,
+            "repo": REPO_ROOT, "rules": sorted(set(_RULE_RE.findall(detail or ""))),
+            "files": [file_path],
+        }
+        if detail:
+            rec["detail"] = detail[:400]
+        os.makedirs(os.path.dirname(ENFORCEMENT_LOG), exist_ok=True)
+        with open(ENFORCEMENT_LOG, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # logging must NEVER break the hook
 
 
 def _load_counters():
@@ -98,6 +123,7 @@ def main():
         if attempts < CAP:
             counters[file_path] = attempts + 1
             _save_counters(counters)
+            _log_enforcement(file_path, "blocked", detail)
             try:
                 sys.stderr.write(
                     "RUBRIC SELF-HEAL ({}/{}): the file you just edited has a blocking standards "
@@ -114,6 +140,7 @@ def main():
                 fh.write("- {} — unresolved after {} heal attempts:\n  {}\n".format(file_path, CAP, detail[:400]))
         except OSError:
             pass
+        _log_enforcement(file_path, "degraded", detail)
         return 0  # allow; the CEO's RUBRIC.GATE still catches this at integration
 
     except Exception:

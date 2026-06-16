@@ -61,6 +61,14 @@ hard/gate/advisory map.
   from internet best-practice research, then has the operator pick which to adopt (each with a
   rationale) before authoring them into `.rubric/kb/` — the in-session research→rubric-KB bridge that
   rubric otherwise lacks.
+- **Capability audit logs** (`scripts/log_capability.py` + `logs/rubric-enforcement.jsonl` /
+  `logs/research.jsonl`, gitignored) — a local, never-published trail of (a) every time **rubric
+  ENFORCED** a standard: a blocking violation it caught/healed/degraded that would otherwise have
+  broken the rules (written in real time by `rubric_heal_gate.py`, and by the CEO's RUBRIC.GATE +
+  the features command's `gate`/`verify` actions), and (b) every **research** action (capture/run/
+  benchmark) and its verdict outcome. Implemented at the integration layer (the vendored tools are
+  re-vendored upstream, not edited here); dependency-free and fail-open. View via `/goat-ceo:features`
+  → rubric/research → `log`, or `python scripts/log_capability.py show rubric|research`.
 
 ### Changed
 

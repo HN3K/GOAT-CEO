@@ -70,7 +70,7 @@ longer lists into ≤4 buckets and drill down; never hide a feature.
 2. Call `AskUserQuestion` with that feature's ACTIONS. If it has ≤4, list them directly. If more (e.g.
    rubric), ask the CATEGORY first, then the specific action in a follow-up `AskUserQuestion`:
    - **Toggle** — enable / disable (per-repo) · set personal default · unset override
-   - **Inspect** — `status` (what's enforced) · `measure`
+   - **Inspect** — `status` (what's enforced) · `measure` · `log` (enforcement trail)
    - **Run** — `seed` · `gate <files>` · `verify <file>` · `codify <files>`
    - **Self-heal** — `heal on/off`
    For features with only toggles (`strict-mode`, `unattended`, `codebase-index`), present those
@@ -166,17 +166,27 @@ applicability per repo and skip features that don't apply.
   PATH actually BLOCK**; conventions/exemplars + `llm`/advisory rules are guidance. Flag any blocking
   rule whose tool (`ast-grep`/`ruff`/a `tools.json` linter) is missing from PATH — it silently won't run.
 - **`seed [repo]`** — discover & propose standards, operator selects. *(See the dedicated section.)*
-- **`gate <files…>`** — `rubric check <files> --repo <path> --kb .rubric/kb` (exit 1 = violation).
+- **`gate <files…>`** — `rubric check <files> --repo <path> --kb .rubric/kb` (exit 1 = violation). If
+  it BLOCKS, record it: `python scripts/log_capability.py rubric --source features --action blocked
+  --repo <path> --rules <ids> --files <files>` (parse the rule ids from the `[ast-grep <id>]` / `[ruff
+  <id>]` lines).
 - **`measure`** — `rubric measure --changed --repo <path> --kb .rubric/kb [--baseline … --save …]` (advisory).
-- **`verify <file>`** — `rubric enforce <file> --verify --kb .rubric/kb` (gate + adversarial LLM review; subscription-billed).
+- **`verify <file>`** — `rubric enforce <file> --verify --kb .rubric/kb` (gate + adversarial LLM
+  review; subscription-billed). On a FAIL verdict, log it (`… rubric --source reviewer-c --action
+  violation --repo <path> --files <file> --rules <ids>`).
 - **`codify <files…>`** — `rubric codify <files> --repo <path> --draft --write --kb .rubric/kb` → `.rubric/proposals/` for human approval (from code-review drift, NOT research).
-- **`heal on|off [repo]`** — toggle the opt-in self-heal hook in a target repo (print/perform the copy + wiring).
+- **`heal on|off [repo]`** — toggle the opt-in self-heal hook in a target repo (print/perform the copy + wiring). (When on, the hook logs every block/heal/degrade itself.)
+- **`log`** — show the enforcement audit trail: `python scripts/log_capability.py show rubric`. Records
+  every time rubric ENFORCED a standard — a blocking violation it caught/healed/degraded that would
+  otherwise have broken the rules (written in real time by the heal-gate, and by the `gate`/`verify`
+  actions + the CEO's RUBRIC.GATE). Stored at `logs/rubric-enforcement.jsonl` (gitignored).
 
 ### research `<action>`
 - **`status`** — scan `research-kb/`: per subject dir, `synthesis.md` + `claims.jsonl` ⇒ **VERIFIED**; only `sources/` ⇒ **CAPTURED**. (The engine generates no `INDEX.md`; derive the catalog by scanning.)
-- **`capture <sources.json>`** — `python tools/research-system/scripts/run_capture.py <sources.json> --research-root research-kb` (free, no LLM).
-- **`run <slug> "<question>" [--discover N]`** — `python tools/research-system/scripts/run_research.py <slug> "<question>" --research-root research-kb [--discover N]` (decompose→retrieve→answer→verify→synthesize; subscription-billed; `--discover N` adds web search for gaps).
-- **`benchmark <slug>`** — `python tools/research-system/scripts/run_benchmark.py <slug> --research-root research-kb` (faithfulness check).
+- **`capture <sources.json>`** — `python tools/research-system/scripts/run_capture.py <sources.json> --research-root research-kb` (free, no LLM). After it runs, log it: `python scripts/log_capability.py research --action capture --subject <slug> --sources <N>`.
+- **`run <slug> "<question>" [--discover N]`** — `python tools/research-system/scripts/run_research.py <slug> "<question>" --research-root research-kb [--discover N]` (decompose→retrieve→answer→verify→synthesize; subscription-billed; `--discover N` adds web search for gaps). After it runs, log it with the verdict tally: `python scripts/log_capability.py research --action run --subject <slug> --question "<q>" --verdicts "supported=<n>,overreach=<n>,unsupported=<n>"`.
+- **`benchmark <slug>`** — `python tools/research-system/scripts/run_benchmark.py <slug> --research-root research-kb` (faithfulness check). Log: `python scripts/log_capability.py research --action benchmark --subject <slug>`.
+- **`log`** — show the research audit trail: `python scripts/log_capability.py show research` (every capture/run/benchmark + outcome). Stored at `logs/research.jsonl` (gitignored).
 
 > All `rubric`/`research` shell calls run with UTF-8 forced (`settings.json` sets `PYTHONUTF8=1`),
 > required on Windows or rubric's non-ASCII output crashes the console.
