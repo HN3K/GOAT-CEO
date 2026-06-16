@@ -139,13 +139,13 @@ def _implementer_result_evidence(
     a leftover result file must NOT clear a later no-op implementer. A file counts only if:
       - its `endHead` matches the CURRENT worktree HEAD (the change it claims is in this
         tree right now), OR
-      - its `startHead` matches the baseline recorded for THIS run by record_agent_start.py.
-        That baseline advances on every SubagentStart, so a prior batch's result carries a
-        stale startHead and will NOT match.
+      - its `startHead` matches the baseline recorded for THIS run by record_agent_start.py
+        AND its `cwd` matches the payload cwd. `cwd` is MANDATORY on this path because two
+        independent batches can start from the SAME baseline SHA — startHead alone collides,
+        so a `cwd`-less result could clear a no-op implementer that merely shares the
+        baseline. The cwd match ties the evidence to THIS worktree.
     `sessionId` is deliberately NOT used as a binder: the SubagentStop payload session can be
-    shared across an entire CEO session, so it cannot distinguish batches. As a final
-    cross-worktree guard, if the file names a `cwd` and we have a payload cwd, they must match
-    — rejecting a same-session result whose startHead collides but came from another worktree.
+    shared across an entire CEO session, so it cannot distinguish batches.
     """
     for path in sorted(_glob.glob(os.path.join(WORKSPACE, "IMPLEMENTER-RESULT*.json"))):
         try:
@@ -167,15 +167,15 @@ def _implementer_result_evidence(
         baseline = start_head or rec_start
         if baseline and end_head == baseline:
             continue
-        # Current-run binding — reject stale files (incl. earlier same-session batches).
+        # Current-run binding — reject stale files (incl. earlier same-session batches that
+        # share a baseline SHA). The startHead path additionally REQUIRES a matching cwd, so
+        # a cwd-less result can't clear a no-op implementer that merely shares the baseline.
+        rec_cwd = str(obj.get("cwd", "") or "").strip()
+        cwd_match = bool(rec_cwd) and bool(cwd) and _norm_path(rec_cwd) == _norm_path(cwd)
         bound = (cur_head and end_head == cur_head) or (
-            start_head and rec_start and rec_start == start_head
+            start_head and rec_start and rec_start == start_head and cwd_match
         )
         if not bound:
-            continue
-        # Cross-worktree guard: a named cwd must match the payload cwd when both are present.
-        rec_cwd = str(obj.get("cwd", "") or "").strip()
-        if rec_cwd and cwd and _norm_path(rec_cwd) != _norm_path(cwd):
             continue
         return True
     return False

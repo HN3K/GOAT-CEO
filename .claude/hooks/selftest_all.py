@@ -460,9 +460,10 @@ def check_F_artifacts():
                 assert_exit("F.impl stale result still blocks", "check_artifacts.py",
                             {"agent_type": "team-implementer", "cwd": tmp3,
                              "session_id": sid3, "agent_transcript_path": ""}, 2)
-            # (8) a CURRENT-RUN result (sessionId matches) clears a clean no-op tree -> ALLOW.
+            # (8) a CURRENT-RUN result (startHead matches the recorded baseline AND cwd
+            #     matches the payload cwd) clears a clean no-op tree -> ALLOW.
             current_result = {
-                "sessionId": sid3, "batchId": "cur",
+                "sessionId": sid3, "batchId": "cur", "cwd": tmp3,
                 "startHead": head3, "endHead": "f" * 40,
                 "changedFiles": ["src/new.py"],
             }
@@ -470,6 +471,27 @@ def check_F_artifacts():
                 assert_exit("F.impl current-run result allows", "check_artifacts.py",
                             {"agent_type": "team-implementer", "cwd": tmp3,
                              "session_id": sid3, "agent_transcript_path": ""}, 0)
+            # (8b) cwd is MANDATORY: a startHead-matching result that OMITS cwd must NOT clear
+            #      a no-op implementer (two batches can share a baseline SHA).
+            nocwd_result = {
+                "sessionId": sid3, "batchId": "nocwd",
+                "startHead": head3, "endHead": "e" * 40,
+                "changedFiles": ["src/x.py"],
+            }
+            with workspace_file("IMPLEMENTER-RESULT.nocwd.json", nocwd_result):
+                assert_exit("F.impl startHead-match without cwd blocks", "check_artifacts.py",
+                            {"agent_type": "team-implementer", "cwd": tmp3,
+                             "session_id": sid3, "agent_transcript_path": ""}, 2)
+            # (8c) cwd present but MISMATCHED -> also BLOCK.
+            mismatch_result = {
+                "sessionId": sid3, "batchId": "mismatch", "cwd": tmp3 + "_other",
+                "startHead": head3, "endHead": "d" * 40,
+                "changedFiles": ["src/y.py"],
+            }
+            with workspace_file("IMPLEMENTER-RESULT.mismatch.json", mismatch_result):
+                assert_exit("F.impl cwd-mismatch result blocks", "check_artifacts.py",
+                            {"agent_type": "team-implementer", "cwd": tmp3,
+                             "session_id": sid3, "agent_transcript_path": ""}, 2)
     # (9) same-session stale: the result's sessionId MATCHES the run, but its startHead is
     #     stale and endHead != current HEAD -> still BLOCK. sessionId is no longer a binder,
     #     so an earlier batch of the same long-running session can't clear a no-op.
