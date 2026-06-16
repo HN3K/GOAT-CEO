@@ -245,8 +245,9 @@ is treated as directional, not load-bearing.
 
 ## §I — Optional integration: `rubric` standards-grounding (RUBRIC-AVAILABLE)
 
-> **Status:** design of record (2026-06-15). **Not yet built.** Primitive ledger: P13. Source project:
-> `C:\Users\hnthr\source\KadenSeriousProjects\rubric` (pin a commit before depending on it — built 2026-06-14/15,
+> **Status:** design of record (2026-06-15). **BUILT — v1 + v2 wired and vendored** (see §I.4/§I.6 for the
+> landed items; the integration lives in `goat-ceo.md`/`templates.md`/`rules.md` + `tools/rubric/`). Primitive
+> ledger: P13. Source project: `C:\Users\hnthr\source\KadenSeriousProjects\rubric` (pin a commit before depending on it — built 2026-06-14/15,
 > zero soak). Backed by a 4-agent analysis pass (capability/CLI contracts, integration-point mapping,
 > overlap/merge design, readiness/orchestration-fit).
 
