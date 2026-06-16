@@ -601,6 +601,68 @@ Send your verdict to {REPO_PREFIX}-overseer.
 
 ---
 
+## 12a. Reviewer C — Standards lens (rubric) — RUBRIC-AVAILABLE repos ONLY
+
+> Spawned ONLY when the repo is RUBRIC-AVAILABLE, in parallel with Reviewers A/B. `team-verifier`
+> (model: sonnet), tools `Read, Grep, Bash(rubric *)`. Runs rubric's OWN verification — its deterministic
+> gate + grounded LLM review + mechanical span-check + 3-judge adversarial ensemble — over the changed
+> files, contributing the STANDARDS / conventions / reuse axis that Reviewers A (correctness) and B
+> (test-quality) do not cover. Naturally EXEMPT from `check_toolcall_audit` (its `"reviewer":"C"` marker is
+> not A/B; its evidence is the rubric subprocess, not Read calls).
+>
+> COST NOTE: `rubric enforce --verify` runs rubric's `claude -p` path (≈1 review call per applicable LLM-rule
+> + 3 judge calls per surviving finding, per file — serial). This is the deliberate opt-in for
+> RUBRIC-AVAILABLE repos: it buys rubric's adversarial span-check + refutation rigor on the standards axis.
+> To cut cost, drop `--verify` (advisory findings then unfiltered by the ensemble); the verified path is the
+> default because the span-check + 3-judge refutation are exactly what make rubric's standards findings
+> trustworthy.
+
+```
+You are Reviewer C (standards lens) for {REPO_PREFIX} Phase 5 review. Spawned ONLY when RUBRIC-AVAILABLE.
+
+Working directory: {REPO_PATH}
+
+## Task
+
+Read agent-workspace/IMPLEMENTATION-MANIFEST.md for the list of changed files. For each changed CODE file,
+run rubric's verification from the repo cwd (rubric is on the operator PATH; `--repo` defaults to `.`):
+
+  rubric enforce <file> --verify --kb .rubric/kb
+
+This runs: the deterministic standards gate + a grounded LLM review (against your KB conventions/exemplars)
++ a mechanical span-check (drops fabricated citations for free) + a 3-judge adversarial ensemble (refutes
+false positives; survivors carry a confidence 0..1). Parse the plain-text output (there is NO --format json):
+  - "verdict: PASS|FAIL" + a "blocking:" section = DETERMINISTIC standards violations (facts).
+  - an "advisory:" section = adversarially-VERIFIED convention/reuse findings (already FP-filtered).
+
+Do NOT run rubric's LLM path on non-code files. Do NOT re-judge rubric's findings — rubric already verified
+them; your job is to collect and report them as a lens.
+
+## Deliverable
+
+Write a JSON verdict block to agent-workspace/REVIEW-LOG.md under: ## Review C
+
+```json
+{
+  "reviewer": "C",
+  "perspective": "standards",
+  "verdict": "PASS" | "FAIL",
+  "blocking_violations": [ { "file": "<path>", "line": <n|null>, "rule": "<id>", "message": "<...>" } ],
+  "verified_advisory":   [ { "file": "<path>", "line": <n|null>, "message": "<...>", "confidence": <0..1> } ],
+  "gate_pass_files": <count>,
+  "gate_fail_files": <count>
+}
+```
+
+Set verdict=FAIL if ANY file has a blocking standards violation; PASS otherwise. `blocking_violations` are
+deterministic FACTS (like a failing test). `verified_advisory` findings are already adversarially verified —
+surface them for the judge to weigh; they do not by themselves force a FAIL.
+
+Send the verdict JSON to {REPO_PREFIX}-overseer.
+```
+
+---
+
 ## 13. Completeness Critic
 
 > Lightweight: haiku, Read + Grep only. Runs AFTER both reviewer verdicts exist in REVIEW-LOG.md.
@@ -652,15 +714,23 @@ Working directory: {REPO_PATH}
 
 Read, in order:
 1. agent-workspace/PLAN.md (acceptance criteria + roadmap milestone if referenced)
-2. agent-workspace/REVIEW-LOG.md (Review A JSON, Review B JSON, Completeness Critic JSON)
+2. agent-workspace/REVIEW-LOG.md (Review A JSON, Review B JSON, Completeness Critic JSON, AND Review C JSON if present — the rubric standards lens, RUBRIC-AVAILABLE repos only)
 3. agent-workspace/RESEARCH-LOG.md (any SINGLE-SOURCE flags from Phase 2)
 
 ## Binding verdict rules
 
 - Issue PASS only if: both reviewer verdicts are PASS AND completeness critic has zero silent gaps
-  AND all SINGLE-SOURCE findings were independently corroborated in at least one reviewer's evidence.
+  AND all SINGLE-SOURCE findings were independently corroborated in at least one reviewer's evidence
+  AND (when Review C is present) Review C has NO `blocking_violations`.
 - Issue FAIL if: either reviewer issued FAIL, OR any silent gap exists, OR a SINGLE-SOURCE finding
-  from Phase 2 was not independently corroborated.
+  from Phase 2 was not independently corroborated, OR (when Review C is present) Review C reports ANY
+  `blocking_violation`.
+- **Composing Review C (rubric standards lens), when present:** its `blocking_violations` are DETERMINISTIC
+  facts — treat each like a failing test → FAIL (rubric's deterministic gate has no false positives). Its
+  `verified_advisory` findings are ALREADY adversarially verified by rubric (span-check + 3-judge ensemble),
+  so do NOT re-judge them; weigh them as a standards lens — numerous high-confidence advisory findings warrant
+  noting in your rationale and may tip a borderline verdict, but verified_advisory alone does not force a FAIL.
+  Reviewers A/B remain authoritative for correctness and test-integrity; Review C is authoritative for standards.
 - On weak evidence (a reviewer's "evidence" field contains vague citations rather than file:line),
   ESCALATE the severity of that finding — treat it as a gap, not a confirmation.
 - Read the REVIEW-ITERATION counter: cat agent-workspace/REVIEW-ITERATION.txt (or 0 if absent).
@@ -829,18 +899,25 @@ const VERDICT = {
   required: ['verdict', 'findings', 'escalate'],
 }
 phase('Review')
+// args.rubricAvailable is set by the CEO when the repo is RUBRIC-AVAILABLE.
 await parallel([
   () => agent(`[Verifier A §11 correctness. Write the Review A verdict block; read >= the audit minimum of files.]`,
               { label: 'review:A', agentType: 'team-verifier' }),
   () => agent(`[Verifier B §12 test-quality + reward-hack audit. Write the Review B verdict block.]`,
               { label: 'review:B', agentType: 'team-verifier' }),
+  // Reviewer C (standards lens) — ONLY when RUBRIC-AVAILABLE. Runs rubric's own verification.
+  ...(args && args.rubricAvailable
+    ? [() => agent(`[Reviewer C §12a: run \`rubric enforce <changed-file> --verify --kb .rubric/kb\` over the changed files; write the Review C verdict block (blocking_violations = facts; verified_advisory = lens).]`,
+                   { label: 'review:C', agentType: 'team-verifier' })]
+    : []),
 ])
 await agent(`[Completeness critic §13: flag acceptance criteria neither reviewer covered.]`,
             { label: 'review:critic', agentType: 'team-verifier', model: 'haiku' })
 phase('Judge')
 const judged = await agent(
-  `[Judge §14: read Review A/B + critic; issue a binding verdict. Bias-mitigated: grade end-state, ignore
-    order/length, escalate severity on weak/uncited evidence.]`,
+  `[Judge §14: read Review A/B + critic (+ Review C when RUBRIC-AVAILABLE — rubric standards lens: its
+    blocking_violations are facts → FAIL; verified_advisory is an already-verified lens to weigh). Issue a
+    binding verdict. Bias-mitigated: grade end-state, ignore order/length, escalate severity on weak evidence.]`,
   { label: 'review:judge', agentType: 'team-verifier', model: 'opus', schema: VERDICT })
 // Gate-as-stage: check_review_gate.py (TaskCompleted) does NOT fire for Workflow agents, so the verdict
 // gates the result HERE. The reviewer read-audit (check_toolcall_audit) IS wired as a SubagentStop

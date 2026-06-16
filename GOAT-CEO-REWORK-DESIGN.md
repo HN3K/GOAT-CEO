@@ -322,10 +322,23 @@ print a path's signature twice. Token budget (~2–3k): map ≤1.2k, components 
 - **v1 (safe, deterministic, zero added LLM cost):** P13 ledger row + RUBRIC-AVAILABLE registry flag + intake
   detection/bootstrap + Planner grounding-merge + CEO-run `RUBRIC.GATE` + `measure` deltas + doctrine rows.
   Delivers the full "ground before write, gate before merge" loop with zero self-heal risk.
-- **v2 (defer):** the LLM standards-review lens (run via GOAT's own `team-verifier` reading the KB — Reviewer C,
-  feeding the judge as advisory; gate failures as facts); the native PostToolUse self-heal gate (needs a per-file
-  heal-cap wrapper rubric lacks today, to fit inside `maxTurns:30`); the `codify --draft` loop surfaced to the
-  operator at session close; cross-repo portable-conventions sharing via `rubricConventions`.
+- **v2 standards-review lens — BUILT (2026-06-15), as Reviewer C.** Head-to-head analysis (two deep-dive agents)
+  found GOAT-CEO's Phase 5 (correctness + test-integrity + acceptance-criteria) and rubric's verification
+  (standards/conventions/reuse) are **orthogonal targets — not substitutes**; replacing one with the other would
+  delete a whole verification axis. So Reviewer C **adds** rubric's standards verification, RUBRIC-AVAILABLE repos
+  only, without touching A/B. **Decision change vs the v1 plan:** Reviewer C runs rubric's OWN `rubric enforce
+  --verify` (its gate + grounded review + mechanical span-check + 3-judge ensemble) — NOT a `team-verifier`
+  re-reading the KB — because the operator explicitly chose to *use rubric's verification system* where rubric is
+  enabled. Cost accepted: `enforce --verify` runs rubric's `claude -p` path (≈1 review call/LLM-rule + 3 judge
+  calls/finding, per file, serial). The judge composes Review C: `blocking_violations` = FAIL-facts;
+  `verified_advisory` = an already-verified lens. Reviewer C is naturally audit-exempt (`reviewer:"C"`).
+  Wiring: templates §12a + §14 + §17 kernel; `goat-ceo.md` Phase 5; `roster.md`; a `rules.md` row.
+- **v2 still deferred:** **(highest-value next)** graft rubric's **mechanical span-check** onto GOAT's A/B
+  *correctness* reviewers — the one rubric mechanism strictly superior even for correctness (GOAT's read-floor
+  counts *that* ≥5 reads happened, not *that* a cited `file:line` resolves; a fabricated `foo.py:213` survives).
+  A `SubagentStop` validator that opens each cited span and confirms it exists would harden A/B/judge findings.
+  Also deferred: the native PostToolUse self-heal gate (needs a per-file heal-cap wrapper to fit `maxTurns:30`);
+  the `codify --draft` loop at session close; cross-repo conventions sharing via `rubricConventions`.
 
 ### §I.5 — Caveats & top risks
 

@@ -40,7 +40,7 @@ and `agent-workspace/STATUS.md` heartbeats. CEO is the single committer (Doctrin
 
 **Parallel fan-out pairs:**
 - Research phase: researcher-codebase + researcher-technical (always parallel)
-- Review phase: reviewer-a + reviewer-b (always parallel), followed by completeness-critic + judge (sequential after both verdicts exist)
+- Review phase: reviewer-a + reviewer-b (always parallel) — plus **reviewer-c (standards lens, RUBRIC-AVAILABLE repos ONLY)** which runs rubric's own `rubric enforce --verify` (templates §12a; `reviewer:"C"` → naturally audit-exempt) — followed by completeness-critic + judge (sequential after the verdicts exist). The judge composes Review C: rubric `blocking_violations` are facts → FAIL; `verified_advisory` is an already-verified standards lens to weigh.
 - Implement batches: parallel only when no shared files; otherwise sequenced with `addBlockedBy`
 
 **Phase gate enforcement:** each phase writes a `*.GATE` sentinel when complete. The `check_phase_gate.py` PreToolUse hook blocks Write/Edit/Bash until the prior phase's gate exists. Do not manually delete gate sentinels — write `agent-workspace/STOP` to halt a pipeline cleanly instead.
