@@ -161,8 +161,13 @@ A hand-curated, layered Markdown map of a repo's own code (`MASTER-INDEX.md` →
 queried through a local `codebase-index-tools` CLI — no embeddings, no vector DB, deterministic and
 human-readable. When available, researchers and implementers run `search`/`inject` to load
 task-relevant context *before* touching files, and `check` after. If a repo has no index, GOAT-CEO
-can bootstrap one from the self-contained specs in [`specs/`](specs/). Repos may also be registered
-as **read-only reference** sources agents may cite but never modify.
+can bootstrap one from the self-contained specs in [`specs/`](specs/). Each repo is registered with
+**`rwx` permissions** — `r` read (always), `w` write (a repo without `w` is added to
+`READONLY-PATHS.json` so writes are hard-blocked — this is how a **read-only reference** source is
+enforced), `x` execute/run-commands (a briefed convention). Permissions are chosen once at intake via
+the native picker and **displayed, not re-asked**, on later sessions; `/goat-ceo` opens with a startup
+settings summary (working-set repos + their permissions + active optional features + related repos) so
+you can confirm at a glance you're on the right stuff.
 
 ```
 search --query "auth"           # which indexes cover authentication

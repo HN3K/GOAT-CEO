@@ -69,8 +69,21 @@ hard/gate/advisory map.
   benchmark) and its verdict outcome. Implemented at the integration layer (the vendored tools are
   re-vendored upstream, not edited here); dependency-free and fail-open. View via `/goat-ceo:features`
   → rubric/research → `log`, or `python scripts/log_capability.py show rubric|research`.
+- **Startup orientation + per-repo permissions** — on `/goat-ceo` invocation the CEO now shows a
+  STARTUP SETTINGS SUMMARY (working-set repos with their `rwx` permissions + optional-feature status +
+  related repos) when a repo/registry is known, and asks "where is the work performed + associated
+  repos + permissions" only when nothing is recorded. Permissions chosen in a prior session are
+  DISPLAYED, not re-asked. New per-repo `permissions` field (`rwx`): `r` always on; `w` **enforced** (a
+  repo without `w` is added to `agent-workspace/READONLY-PATHS.json` so `guard_secrets.py` blocks
+  writes); `x` execute/run-commands is a briefed convention (not hook-enforced). `access` kept as a
+  derived/legacy field (`rw` ⇄ `w` present).
 
 ### Changed
+
+- **Documentation-parity rule (`rules.md` Rule 9 + `CLAUDE.md`)** — new standing rule: never push a
+  change/feature without updating the relevant docs (CHANGELOG + whichever of README, truth table,
+  rules, CLAUDE the change touches) in the same change. Behavioral discipline (not a hook; rubric can't
+  express a cross-file diff invariant and doesn't run on GOAT-CEO's own commits).
 
 - **`team-implementer`** now commits atomically to its own `worktree-<name>` branch; the docs were
   corrected to describe this accurately instead of "cannot commit" (C13).

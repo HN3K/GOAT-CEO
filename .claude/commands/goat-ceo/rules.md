@@ -64,8 +64,8 @@ The OPTIONAL capabilities below (rubric, research-KB, strict mode, codebase-inde
 | Researchers + implementers MUST run `search`/`inject` before work when INDEX-AVAILABLE; `check` after | #8 | **SOFT** | `{INDEX_STATUS}` block in templates.md §6, §7, §8, §15 — required steps when INDEX-AVAILABLE, documented fallback when INDEX-UNAVAILABLE |
 | Implementers MUST run `rubric context` for grounding before writing when RUBRIC-AVAILABLE | #8 | **SOFT** | `{RUBRIC_STATUS}` block in templates.md §8 — required `rubric context` step when RUBRIC-AVAILABLE, skipped when RUBRIC-UNAVAILABLE (optional capability, mirrors the index row). Design: `GOAT-CEO-REWORK-DESIGN.md §I` |
 | Standards gate (`RUBRIC.GATE`) blocks integration on a blocking rubric violation, for RUBRIC-AVAILABLE repos | #2/#4 | **HARD (opt-in, per-repo)** | CEO runs `rubric check --changed` (deterministic, exit 1 on violation, NO LLM) on the merged diff at Phase-3 integration; writes `RUBRIC.GATE` only on exit 0. Conditional: `RUBRIC.GATE` is added to `EXPECTED-GATES.txt` ONLY for waves with a RUBRIC-AVAILABLE repo, so the Stop hook never blocks on an absent optional gate. Stronger than the SOFT index gate because rubric's exit code is deterministic. A rule only blocks when its analyzer (`ast-grep`/`ruff`/a `tools.json` linter) is on PATH; blocking findings are logged to `logs/rubric-enforcement.jsonl`. Ledger: P13 |
-| Read-only reference repos (`access: "ro-reference"`) may be READ but never written to by any agent | #8 | **SOFT (backed by HARD guards)** | Briefing in Overseer template `{REFERENCE_REPOS}` block (templates.md §4) + protocols.md Part 0; the STOP-file kill switch + git-commit/push guard are the backstop |
-| `ro-reference` repos are EXEMPT from GOAT/index bootstrap; existing indexes may be used for search | #8 | **SOFT** | Step 1.2 exemption rule in `goat-ceo.md`; `access` field in `repo-registry.json` carries the signal |
+| Read-only repos (no `w` permission — `permissions: "r--"` / `access: "ro-reference"`) may be READ but never written | #8 | **HARD (registered path) + SOFT briefing** | A repo without `w` has its path written to `agent-workspace/READONLY-PATHS.json`; `guard_secrets.py` (PreToolUse `Write\|Edit`) then BLOCKS writes resolving under it (C17). Plus briefing in the Overseer `{REFERENCE_REPOS}` block (templates.md §4) + protocols.md Part 0, with the STOP-file + git guards as further backstops. Per-repo `permissions` (`rwx`) are chosen at intake (`/goat-ceo` Step 1.0/1.1) and displayed, not re-asked |
+| `r--` / `ro-reference` repos are EXEMPT from GOAT/index bootstrap; existing indexes may be used for search | #8 | **SOFT** | Step 1.2 exemption rule in `goat-ceo.md`; the `permissions`/`access` field in `repo-registry.json` carries the signal |
 | Secret-bearing files cannot be modified by agents | #3 | **HARD** (settings.json deny + `guard_secrets.py` hook) | `permissions.deny` in project `settings.json` covers `**/.env`, `**/.env.local`, `**/.env.*.local`, `**/.npmrc`, `**/.pypirc`, `**/secrets.json`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `**/.aws/credentials`, `**/appsettings.*.json` (C14). A belt-and-suspenders `PreToolUse` hook `.claude/hooks/guard_secrets.py` (Write\|Edit) additionally blocks the broader `.env.*` family (EXCEPT non-secret templates `.env.example`/`.sample`/`.template`/`.dist`) plus `*.crt`/`*.p12`/`*.pfx`, and enforces optional per-session read-only reference paths via `agent-workspace/READONLY-PATHS.json` (C17) — wired |
 | Cite `file:line` or the finding is a hallucination | #4 | **SOFT** | briefing in role prompts; backed by live `check_toolcall_audit.py` |
 | Test-quality taxonomy: structure-only / mock / real-execution — only real-execution counts for gate | #4 | **SOFT** | briefing; backed by live `check_test_gate.py` running the real broad suite |
@@ -196,6 +196,28 @@ The OPTIONAL capabilities below (rubric, research-KB, strict mode, codebase-inde
 - **SOFT BY DESIGN** — both the mandatory-intake rule and the Phase-0 plan-approval gate (`goat-ceo.md` Step 1) are **CEO behavioral conventions, not harness-enforced plan-mode locks**. `permissions.defaultMode: "plan"` is deliberately NOT set in `.claude/settings.json`, so no hook can mechanically block the CEO from skipping intake or launching the pipeline before the operator confirms the plan. The MANDATORY-INTAKE RULE block at the top of Step 1 in `goat-ceo.md` makes this a read-time unconditional notice — the CEO cannot read Step 1 without seeing the non-skippable rule — but enforcement is prompt discipline, not a gate exit-2. INDEX status propagates via `{INDEX_STATUS}` variable in every researcher and implementer spawn template (templates.md §6, §7, §8, §15), where it becomes a MUST-run step when INDEX-AVAILABLE.
 - Phase 4 INDEX.GATE (`check_pipeline_complete.py`) remains the staleness enforcement backstop — but intake is the upstream prevention layer.
 - This soft/hard split is recorded in `docs/enforcement-truth-table.md`: the plan gate + intake are **Advisory**; the sentinel phase order, test/review gates, and `git add -A/.` deny are **Hard**.
+
+---
+
+## Rule 9 — Documentation Parity Before Push
+
+**The rule:** Never `git push` a new change/feature without updating the relevant documentation in the
+SAME change. Order of operations: **build → validate → update docs → commit → push.** At minimum touch
+`CHANGELOG.md`; additionally update whichever of `README.md`, `docs/enforcement-truth-table.md`, this
+`rules.md`, and `CLAUDE.md` the change affects (a new command/feature/flag, a behavior change, a new
+file, a corrected claim). A push whose diff changes code/behavior but touches no docs is a defect.
+
+**Why:** Docs drift silently behind code; a stale README / truth table is actively misleading for a
+public, self-referential harness (the truth table even asserts "where this table and the docs disagree,
+this table wins" — so a stale row is dangerous). Updating docs in lockstep with each change is cheaper
+than a periodic catch-up sweep and keeps every published claim verifiable.
+
+**How enforced:** **SOFT (behavioral discipline)** — recorded here and in `CLAUDE.md` Conventions; the
+CEO/assistant updates docs before pushing. This is NOT a hook/gate: a cross-file "did this diff also
+touch docs?" invariant is not a per-file lint, and rubric — a per-file standards checker that runs on
+target repos during the pipeline, not on GOAT-CEO's own commits — structurally cannot express it. An
+optional commit-guard hook that warns on a code-without-docs diff could back it later; the prose rule
+is the baseline.
 
 ---
 

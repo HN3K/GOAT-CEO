@@ -92,36 +92,71 @@ The HARD rows in `rules.md` are only real if the hooks in `.claude/settings.json
 - **Collaborative mode** — you MAY continue (the operator is present to compensate), but treat EVERY `rules.md` HARD row as SOFT until enforcement is restored. Do not rely on a gate you just proved is dead.
 - **Unattended mode** — you MUST NOT engage the keep-going layer (Step 3.1) until the self-check passes. An unattended run with dead hooks has no safety net; halt and leave the degraded report for the operator.
 
-### 1.0 — Mode Selection
+### 1.0 — Startup orientation & mode selection
 
-Check if `repo-registry.json` exists in the GOAT-CEO repo root.
+First READ (do not ask yet): `repo-registry.json` (if present) and the optional-feature defaults
+(`.claude/goat-features.json` baseline overlaid by `.claude/goat-features.local.json`). Decide whether
+a **repo / working set is already known** — the task in `$ARGUMENTS` names a registered repo or group,
+you are invoked inside a registered repo, or a registry exists from a prior session. This drives the
+two startup paths, and the goal of BOTH is that the operator can tell at a glance they're on the right
+stuff.
 
-**If registry exists**, output:
+**(A) A repo / working set IS known → SHOW SETTINGS, don't re-ask.** Display a compact **STARTUP
+SETTINGS SUMMARY**. Permissions and optional features recorded in a prior session are shown DIRECTLY,
+never re-asked:
 
-> "Welcome back. I found your repo registry. Options:
-> **Q) Quick Start** — use registered repos (I'll show the list)
-> **F) Full Setup** — register repos from scratch
+> **Working set** (from `repo-registry.json`):
 >
-> Which mode?"
+> | Repo | Path | Perms | Optional features (rubric · index · research) | Related repos |
+> |---|---|---|---|---|
+> | {prefix} | {path} | {rwx} | {rubric ✓/–/? · index ✓/–/? · research ✓/–/?} | {group members or —} |
+>
+> **Permissions:** `r` read (always on) · `w` write — **enforced**: a repo without `w` has its path in
+> `agent-workspace/READONLY-PATHS.json` so `guard_secrets.py` blocks Write/Edit under it · `x`
+> execute/run-commands — a briefed convention (no per-repo command hook). `?` = not yet detected (the
+> Step 1.2 prereq check fills it).
+> **Optional-feature defaults in effect:** {merge of goat-features.json + .local}. Manage via
+> `/goat-ceo:features`.
+>
+> Proceed with these, or adjust (repos / permissions / features)?
 
-- Quick Start → Step 1.Q
-- Full Setup → Step 1.1
+On **proceed** → Step 1.2 (prereq check) → Step 2. On **adjust** → Step 1.Q (re-select / revalidate
+the registered set) or Step 1.1 (register more / from scratch). For any repo in the set whose
+permission is NOT yet recorded, run the **permission step** below before proceeding.
 
-**If no registry exists**, go directly to Step 1.1.
+**(B) NO repo specified AND no usable registry → ASK where the work is.**
 
-**STOP HERE.** Wait for user response.
+> "Where is the work being performed? Give the absolute path of the primary repo. Are there any
+> **associated repos** — a shared-code / API peer, or a **read-only reference** (source-of-truth you
+> read but never modify)? List each with its path."
+
+Then register them (Step 1.1), choosing **permissions per repo** (the permission step below).
+
+**Permission step (run ONLY for repos with no recorded permission — otherwise display the recorded
+value and move on):** use the `AskUserQuestion` picker, once per repo:
+- **rwx — full** (normal target: read, write, run commands)
+- **r-x — read + run, no writes** (build/test it, never modify)
+- **rw- — read + write, no command execution**
+- **r-- — read-only reference** (cite only; the legacy `ro-reference`)
+
+Record the choice as the repo's `permissions`. A repo **without `w`** has its path written to
+`agent-workspace/READONLY-PATHS.json` (so the write-block is real). `x` is recorded and briefed to
+agents, not hook-enforced.
+
+**STOP HERE.** Wait for the operator.
 
 ---
 
 ### 1.Q — Quick Start Flow
 
-Read `repo-registry.json`. Display:
+Read `repo-registry.json`. Display (permissions + features are shown FROM the registry — recorded in a
+prior session, NOT re-asked; only newly-added repos get the permission picker):
 
 > "Registered repos:
 >
-> | # | Prefix | Path | Groups | Last Session | Status |
-> |---|--------|------|--------|-------------|--------|
-> | 1 | {prefix} | {path} | {groups} | {date} | ready / needs revalidation |
+> | # | Prefix | Path | Perms | Features (rubric·index·research) | Groups | Last Session | Status |
+> |---|--------|------|-------|----------------------------------|--------|-------------|--------|
+> | 1 | {prefix} | {path} | {rwx} | {✓/–/?} | {groups} | {date} | ready / needs revalidation |
 >
 > Select by number (e.g., `1,3`), group name, or `all`."
 
@@ -140,7 +175,10 @@ After selection:
 
 > "Which repositories are we working in today? Provide the absolute path for each repo, one per line.
 >
-> Also: are there any READ-ONLY reference repos — source-of-truth code or docs that target repos must consult but must never modify? (Examples: a decrypted sproc archive, a vendor VB6 source tree, a reference schema dump.) List those separately."
+> For EACH I'll set its **permissions** via the permission step (Step 1.0) — `rwx` full target, `r-x`
+> read+run, `rw-` read+write, or `r--` read-only reference (source-of-truth you read but never modify —
+> e.g. a vendor source tree, a decrypted sproc archive, a reference schema dump). Any repo without `w`
+> is enforced read-only by adding its path to `agent-workspace/READONLY-PATHS.json`."
 
 After response, validate each path. For **read-write target** repos:
 - `.git/` exists
@@ -157,6 +195,7 @@ Display validation summary. Write `repo-registry.json`:
   "repos": {
     "{prefix}": {
       "path": "/absolute/path",
+      "permissions": "rwx",
       "access": "rw",
       "bootstrapped": true,
       "goat": true,
@@ -173,6 +212,7 @@ Display validation summary. Write `repo-registry.json`:
     },
     "{ref-prefix}": {
       "path": "/absolute/reference/path",
+      "permissions": "r--",
       "access": "ro-reference",
       "bootstrapped": false,
       "goat": false,
@@ -188,7 +228,11 @@ Display validation summary. Write `repo-registry.json`:
 }
 ```
 
-`access` field values: `"rw"` (read-write target — normal pipeline) | `"ro-reference"` (read-only reference — agents may read for ground-truth, never write).
+`permissions` (rwx string, the source of truth): `r` read (always on) · `w` write · `x`
+execute/run-commands. A repo **without `w`** has its path added to `agent-workspace/READONLY-PATHS.json`
+so writes are hard-blocked by `guard_secrets.py`; `x` is recorded + briefed to agents, not
+hook-enforced. Set once, then DISPLAYED (not re-asked) on later sessions. `access` is the LEGACY/derived
+field kept for back-compat: `"rw"` when `w` is granted, else `"ro-reference"`.
 
 `rubricConventions` (optional): a path/id to a SHARED rubric conventions KB. rubric's conventions plane is portable across repos, so several `rw` repos in a group can point at ONE conventions KB (set the same `rubricConventions` for each, and pass `--kb <that-path>` to the rubric commands). Leave `null` to use each repo's own `.rubric/kb`. Offer a shared conventions KB during relationship mapping (Step 1.3) when repos in a group should enforce the same standards.
 

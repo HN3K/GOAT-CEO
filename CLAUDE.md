@@ -47,6 +47,12 @@ context compaction.
   via the `/goat-ceo:features` command; all default OFF.
 - The CEO is the single committer and makes only pathspec-scoped commits
   (`git add <files>`, never `git add -A`/`.`).
+- **Documentation parity — before every push.** Never push a new change/feature without updating the
+  relevant docs in the SAME change. Order: **build → validate → update docs → commit → push.** At
+  minimum update `CHANGELOG.md`; also update whichever of `README.md`,
+  `docs/enforcement-truth-table.md`, `.claude/commands/goat-ceo/rules.md`, and this `CLAUDE.md` the
+  change affects (new command/feature/flag, behavior change, new file, corrected claim). A push whose
+  diff changes code/behavior but no docs is a defect. (Doctrine: `rules.md` Rule 9.)
 
 ## Setup
 
