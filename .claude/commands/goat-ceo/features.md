@@ -15,10 +15,14 @@ User input: `$ARGUMENTS`
 
 ## How this command runs
 
-- **No arguments → INTERACTIVE MENU MODE (the default, and the normal way to use it).** Show a
-  numbered menu of every feature with its current state; the operator picks a number to drill into a
-  feature, then picks a numbered action; loop until they quit. The operator should NEVER need to know
-  verb syntax.
+- **No arguments → INTERACTIVE MENU MODE (the default, and the normal way to use it).** Present every
+  choice with the **`AskUserQuestion` tool** — Claude Code's native selectable-options picker: the
+  operator clicks an option or types their own via the auto-added **"Other"**. They drill into a
+  feature, then an action, and the loop continues until they quit; they should NEVER need to know verb
+  syntax. CONSTRAINT: `AskUserQuestion` allows at most **4 options per question** (plus the automatic
+  "Other" free-text), so when a list exceeds 4 (the 8-feature menu, rubric's ~11 actions), **group it
+  into ≤4 buckets and drill down** — never hide a feature; "Other" covers anything not shown. Fall back
+  to a plain numbered-text menu only if the tool is unavailable.
 - **Arguments given → FAST PATH.** Treat the first token as a verb (see the Fast-path table) and
   execute it directly, then offer to drop into the menu. Power-user shortcut; identical effects.
 
@@ -37,78 +41,56 @@ Session toggles — `agent-workspace/` sentinels + env (Tier 3, ephemeral):
 
 ## INTERACTIVE MENU MODE  ← do this when `$ARGUMENTS` is empty
 
-Drive a menu loop. Use the **Feature registry**, **Feature actions**, and **`rubric seed`** sections
-below as your reference for each feature's state, applicability, and what each action does. Render
-menus as plain numbered text and WAIT for the operator's reply between every menu — accept a number,
-a feature name, or a letter (`S`/`B`/`Q`).
+Drive the whole flow with the **`AskUserQuestion`** tool so the operator selects from clickable options
+(or types their own via "Other"). Loop until they quit. Use the **Feature registry**, **Feature
+actions**, and **`rubric seed`** sections below as your reference for each feature's state,
+applicability, and what each action does. `AskUserQuestion` caps at **4 options/question** — group
+longer lists into ≤4 buckets and drill down; never hide a feature.
 
-### A. Main menu
+### A. Main menu — pick a feature
 1. From the live state above, compute each feature's **effective state + source scope** (precedence
-   rule below) and its **applicability** to the current/active repo.
-2. Print a numbered list — one row per feature in the Feature registry:
+   below) and its **applicability** to the current/active repo.
+2. Call `AskUserQuestion` ("Which optional feature do you want to configure?") with the features
+   GROUPED into ≤4 selectable options so none are hidden — put the current effective state in each
+   option's description. A good grouping:
+   - **rubric** — standards grounding + RUBRIC.GATE + Reviewer-C (`<state>`)
+   - **research-kb** — capture/verify external research KB (`<state>`)
+   - **Session modes** — strict-mode / unattended (`<states>`)
+   - **Per-repo & manual** — codebase-index / rubric-heal-gate / read-only-ref / destructive-db
+   In the question text, tell the operator the **"Other"** box accepts a feature name directly, or
+   `status` (full per-tier status) / `quit`.
+3. Route: a single-feature option → its **Feature submenu** (B). A group → a second `AskUserQuestion`
+   listing that group's features (each ≤4). `status` → print full per-tier status, then re-ask.
+   `quit` → summarize changes and stop.
 
-   ```
-   GOAT-CEO optional features — pick one to configure:
-
-     1) rubric            off (global default)        standards grounding + RUBRIC.GATE + Reviewer-C
-     2) research-kb       off (global default)        capture/verify external research KB
-     3) codebase-index    n/a (no Codebase-Index/)    search/inject/check instead of direct reads
-     4) strict-mode       off (built-in default)      degraded-allow paths BLOCK instead of warn
-     5) rubric-heal-gate  off (built-in default)      opt-in PostToolUse self-heal in a target repo
-     6) unattended        off (global default)        keep-going / survive-compaction layer
-     7) read-only-ref     —                           mark a repo readable-but-never-writable
-     8) destructive-db    —                           block DROP/RESTORE DATABASE without a token
-
-     S) full status with provenance (all tiers)
-     Q) quit
-   ```
-   Use the REAL computed states, not the placeholders above. Mark inapplicable features `n/a` with a
-   one-line reason; flag a feature that is default-on but unusable here with `?` + the reason.
-3. Ask: **"Pick a feature number (or S / Q)."** WAIT for the reply.
-4. Route: a feature number/name → its **Feature submenu** (B). `S` → print full per-tier status, then
-   redraw the main menu. `Q` → confirm done and stop.
-
-### B. Feature submenu (after a feature is picked)
-1. Show that feature's state across **all tiers** (built-in default / Tier-1 global / Tier-2 per-repo /
-   Tier-3 session) + applicability, so the operator sees what overrides what.
-2. Print a numbered list of the ACTIONS that apply to THIS feature. Number them sequentially. Include
-   the toggle actions the feature supports, then its feature-specific actions, then `B`/`Q`. Example
-   for **rubric**:
-
-   ```
-   rubric — currently: off (global default); repo 'craft': not set; this repo has .rubric/ ✓
-
-     1) enable for this repo            (per-repo override ON)
-     2) disable for this repo           (per-repo override OFF)
-     3) set global default (on/off)     (committed, affects all repos)
-     4) unset this repo's override      (revert to the global default)
-     5) status — show what's ENFORCED   (rubric kb + rubric check; flags blocking vs advisory)
-     6) seed — discover & author standards   (codebase + internet research → you pick)
-     7) gate <files>                    (run the deterministic gate now)
-     8) measure                         (complexity/SLOC deltas; advisory)
-     9) verify <file>                   (gate + adversarial LLM review)
-    10) codify <files>                  (propose rules from code-review drift)
-    11) heal on/off                     (toggle the opt-in self-heal hook)
-
-     B) back to main menu
-     Q) quit
-   ```
-   For features without rich actions (e.g. `strict-mode`, `unattended`), the list is just the relevant
-   toggles + `B`/`Q`. For manual/user-scope features (`rubric-heal-gate`, `destructive-db`), the
-   "enable" action PRINTS the exact copy/wiring steps and offers to perform them with confirmation —
-   it never silently edits another repo or user settings.
-3. Ask the operator to pick a number/letter. WAIT.
+### B. Feature submenu — pick an action
+1. Show the feature's state across **all tiers** (built-in / Tier-1 global / Tier-2 per-repo / Tier-3
+   session) + applicability in one short block, so the operator sees what overrides what.
+2. Call `AskUserQuestion` with that feature's ACTIONS. If it has ≤4, list them directly. If more (e.g.
+   rubric), ask the CATEGORY first, then the specific action in a follow-up `AskUserQuestion`:
+   - **Toggle** — enable / disable (per-repo) · set global default · unset override
+   - **Inspect** — `status` (what's enforced) · `measure`
+   - **Run** — `seed` · `gate <files>` · `verify <file>` · `codify <files>`
+   - **Self-heal** — `heal on/off`
+   For features with only toggles (`strict-mode`, `unattended`, `codebase-index`), present those
+   directly (≤4). For manual/user-scope features (`rubric-heal-gate`, `destructive-db`), the "enable"
+   action PRINTS the exact copy/wiring steps and confirms — it never silently edits another repo or
+   user settings. Use the question text to offer Back / quit (or rely on "Other").
+3. The operator's selection routes to **Acting** (C).
 
 ### C. Acting on a choice
-- **State changes** (enable/disable/set-default/unset, heal on/off): state EXACTLY which
-  file/field/sentinel will change, CONFIRM, perform the write, then re-print the feature's status
-  line(s) with the new provenance, and return to the feature submenu (B).
+- **State changes** (enable/disable/set-default/unset, heal on/off): make the binary/scope decision
+  itself an `AskUserQuestion` where natural — `on | off`; **which repo** (offer the registered repos as
+  options + "Other"); **per-repo vs global default**. Then state EXACTLY which file/field/sentinel will
+  change, perform the write, re-show the feature's state with new provenance, and return to (B).
 - **Feature actions** (rubric status/seed/gate/measure/verify/codify, research status/capture/run/
-  benchmark): run the mapped command(s) from **Feature actions**; for multi-step flows (`rubric seed`)
-  follow that section step by step. Show the result, then return to the submenu.
-- **Missing value** (which repo? which files? which language? on or off?): ASK inline — never guess.
-- **Loop:** after every action, redraw the relevant menu so navigation stays obvious. Continue until
-  the operator picks `Q` (quit), then print a one-line summary of any changes made this session.
+  benchmark): run the mapped command(s) from **Feature actions**; for `rubric seed` follow that
+  section step by step (its candidate selection also uses `AskUserQuestion`, `multiSelect`, grouped ≤4
+  per question). Show the result, then return to (B).
+- **Missing value** (which repo? which files? which language?): ask — via `AskUserQuestion` when it's a
+  choice, else a plain question. Never guess.
+- **Loop:** re-present the relevant menu (via `AskUserQuestion`) after each action until the operator
+  picks quit, then print a one-line summary of any changes made this session.
 
 ---
 
@@ -219,12 +201,14 @@ coding standards & conventions for <lang/framework/domain>" --discover 6`, then 
 the standard, a **1–2 sentence rationale (why adopt it)**, a source citation, and whether it is
 mechanically enforceable (with which analyzer) or advisory.
 
-**3. Present a numbered selection menu (mandatory — never auto-adopt).** Consolidate both passes into
-one numbered list. For EACH candidate show: source tag **📁 codebase-derived** / **🌐 researched**;
-title + the **why**; proposed enforcement **BLOCKING (deterministic via `<tool>`)** or **ADVISORY**;
-backing analyzer + whether it's on PATH (⚠️ if missing — it would silently not run); target
-language(s). Ask the operator which numbers to implement; they may accept/reject/edit/split any.
-Researched standards are opinionated and may be wrong for this repo — operator selection is required.
+**3. Present the candidates for selection (mandatory — never auto-adopt).** Use `AskUserQuestion` with
+`multiSelect: true` so the operator ticks the ones to adopt (group into ≤4 options per question and ask
+in batches when there are many; "Other" lets them name extras or edits). For EACH candidate convey:
+source tag **📁 codebase-derived** / **🌐 researched**; title + the **why**; proposed enforcement
+**BLOCKING (deterministic via `<tool>`)** or **ADVISORY**; backing analyzer + whether it's on PATH (⚠️
+if missing — it would silently not run); target language(s) — put this in each option's description.
+They may accept/reject/edit/split any. Researched standards are opinionated and may be wrong for this
+repo — explicit operator selection is required.
 
 **4. Author the selected.** For each chosen item write the matching `.rubric/kb/` JSON (schemas below)
 and update the manifest: mechanical → `rules/<id>.json` (`kind:"deterministic"`, `enforcement:
